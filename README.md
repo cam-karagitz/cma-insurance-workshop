@@ -21,20 +21,24 @@ Six insurance-shaped examples across three pillars — **claims**, **service**, 
 # 1. Pick a pillar (claims | service | sales), then an example
 $EDITOR examples/claims/fnol-triage.yaml
 
-# 2. Fill in the placeholders (MCP URLs, metadata.owner)
-
-# 3. Deploy it
+# 2. Deploy it — creates the agent, prints agt_... and a Console URL
 python deploy.py examples/claims/fnol-triage.yaml
+
+# 3. Run it — creates a session, opens the SSE stream, sends your prompt, prints events
+python run.py --agent agt_... "Triage claim CLM-2026-0001"
 
 # 4. Work across pillars in complexity order (table below). Copy any example as your own starting point.
 ```
+
+`deploy.py` defines the agent (one-time, versioned). `run.py` is the minimal **client** every CMA integration needs — the part *you* still own: trigger a session, stream events, handle `requires_action`. In production this becomes a webhook handler, a cron, a button in your UI; here it's 100 lines you can read top to bottom.
 
 ## Directory map
 
 ```
 workshop-kit/
 ├── README.md / CLAUDE.md              # this file / Claude Code context
-├── deploy.py                          # YAML → POST /v1/agents (+ environment). Stdlib + requests + pyyaml.
+├── deploy.py                          # define: YAML/JSON → POST /v1/agents. --dry-run to preview.
+├── run.py                             # invoke: session create → SSE stream → send prompt → print events
 ├── examples/
 │   ├── claims/
 │   │   ├── fnol-triage.yaml           # simplest — single agent, one MCP

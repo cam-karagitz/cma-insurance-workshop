@@ -70,8 +70,8 @@ metadata: { owner: <you>, workflow: <name>, role: Orchestrator|Reader|Writer }  
    - `sales/renewal-retention.yaml` — teaches: outcomes rubric — agent self-grades its own output
 2. Edit the YAML; keep tool grants minimal per the 3-tier pattern above.
 3. Set `metadata.owner` / `workflow` / `role` — shared orgs fill fast and unlabeled agents get lost.
-4. `python deploy.py <file.yaml>`; check the printed agent ID + Console URL; archive old versions, don't delete.
-5. Memory stores attach at **session-create** via `resources[]`, not on the agent — see `service/coverage-explainer.yaml` footer and `docs/memory-best-practices.md`.
+4. `python deploy.py <file.yaml>` — creates the agent, prints `agt_...`. Then `python run.py --agent agt_... "<instruction>"` — creates a session, opens SSE, streams events. **deploy.py defines, run.py invokes.** In production, run.py becomes a webhook handler / cron / UI action.
+5. Memory stores attach at **session-create** via `resources[]`, not on the agent — `run.py --memory-store memstore_...` does this; see `service/coverage-explainer.yaml` footer and `docs/memory-best-practices.md`.
 
 ## Going deeper
 
