@@ -62,12 +62,17 @@ metadata: { owner: <you>, workflow: <name>, role: Orchestrator|Reader|Writer }  
 ## When the user asks to build an agent
 
 1. **Match the user's ask to a pillar (claims / service / sales) first, then the closest example.** Copy it; don't write configs from scratch.
-   - `claims/fnol-triage.yaml` — teaches: single agent, one MCP, deny-by-default toolset (simplest possible)
-   - `claims/adjudication.yaml` — teaches: 3-tier multi-agent orchestration (reader / worker / writer) — the capstone
-   - `service/coverage-explainer.yaml` — teaches: memory store attached at session-create via `resources[]`
-   - `service/add-vehicle.yaml` — teaches: human-in-the-loop write — `always_ask` → handle `requires_action`
-   - `sales/quote-builder.yaml` — teaches: multiple MCP servers with per-tool blocklists
-   - `sales/renewal-retention.yaml` — teaches: outcomes rubric — agent self-grades its own output
+   - **claims/**
+     - `fnol-triage.yaml` — teaches: first agent — single agent, one MCP, deny-by-default toolset, the gotchas
+     - `siu-referral.yaml` — teaches: memory store — learns fraud patterns across sessions
+     - `adjudication.yaml` — teaches: multi-agent — 3-tier orchestration (reader / analyst / writer)
+   - **service/**
+     - `coverage-explainer.yaml` — teaches: first agent + memory store attached at session-create via `resources[]`
+     - `add-vehicle.yaml` — teaches: human-in-the-loop write — `always_ask` → handle `requires_action`
+     - `household-review.yaml` — teaches: multi-agent — 3-tier orchestration (readers / writer)
+   - **sales/**
+     - `quote-builder.yaml` — teaches: multiple MCP servers with per-tool blocklists
+     - `renewal-retention.yaml` — teaches: outcomes rubric — agent self-grades its own output
 2. Edit the YAML; keep tool grants minimal per the 3-tier pattern above.
 3. Set `metadata.owner` / `workflow` / `role` — shared orgs fill fast and unlabeled agents get lost.
 4. `python deploy.py <file.yaml>` — creates the agent, prints `agt_...`. Then `python run.py --agent agt_... "<instruction>"` — creates a session, opens SSE, streams events. **deploy.py defines, run.py invokes.** In production, run.py becomes a webhook handler / cron / UI action.

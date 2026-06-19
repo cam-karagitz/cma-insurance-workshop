@@ -2,7 +2,7 @@
 
 Starter configs and a deploy script for building **Claude Managed Agents (CMA)** — Anthropic-hosted agents that run in cloud sandboxes, call your tools over MCP, and coordinate sub-agents.
 
-Six insurance-shaped examples across three pillars — **claims**, **service**, **sales** — each a near-literal `POST /v1/agents` body plus a one-screen deploy script. What you read is what hits the wire.
+Eight insurance-shaped examples across three pillars — **claims**, **service**, **sales** — packaged as **two independent one-day workshops**: a Claims track and a Service & Sales track. Each example is a near-literal `POST /v1/agents` body plus a one-screen deploy script. What you read is what hits the wire.
 
 ## Prerequisites
 
@@ -27,7 +27,7 @@ python deploy.py examples/claims/fnol-triage.yaml
 # 3. Run it — creates a session, opens the SSE stream, sends your prompt, prints events
 python run.py --agent agt_... "Triage claim CLM-2026-0001"
 
-# 4. Work across pillars in complexity order (table below). Copy any example as your own starting point.
+# 4. Work through your track in lab order (tables below). Copy any example as your own starting point.
 ```
 
 `deploy.py` defines the agent (one-time, versioned). `run.py` is the minimal **client** every CMA integration needs — the part *you* still own: trigger a session, stream events, handle `requires_action`. In production this becomes a webhook handler, a cron, a button in your UI; here it's 100 lines you can read top to bottom.
@@ -41,11 +41,13 @@ workshop-kit/
 ├── run.py                             # invoke: session create → SSE stream → send prompt → print events
 ├── examples/
 │   ├── claims/
-│   │   ├── fnol-triage.yaml           # simplest — single agent, one MCP
-│   │   └── adjudication.yaml          # capstone — full 3-tier multi-agent
+│   │   ├── fnol-triage.yaml           # first agent — single agent, one MCP
+│   │   ├── siu-referral.yaml          # + memory store (learns fraud patterns)
+│   │   └── adjudication.yaml          # multi-agent — 3-tier reader/analyst/writer
 │   ├── service/
-│   │   ├── coverage-explainer.yaml    # + memory store
-│   │   └── add-vehicle.yaml           # human-in-loop write (requires_action pattern)
+│   │   ├── coverage-explainer.yaml    # first agent + memory store
+│   │   ├── add-vehicle.yaml           # human-in-loop write (requires_action pattern)
+│   │   └── household-review.yaml      # multi-agent — 3-tier readers/writer
 │   └── sales/
 │       ├── quote-builder.yaml         # multi-MCP (rating + CRM + product catalog)
 │       └── renewal-retention.yaml     # + outcomes rubric (self-grading)
@@ -60,29 +62,29 @@ The examples ship pointing at **hosted mock MCP servers** (synthetic data) so th
 
 **Either.** The CMA API speaks JSON; YAML is just an authoring convenience (comments, multiline `system:` prompts, multi-doc fleets). `deploy.py` accepts both — `yaml.safe_load` parses JSON since JSON ⊂ YAML.
 
-`examples/claims/fnol-triage.yaml` and `examples/claims/fnol-triage.json` are the **same agent in both syntaxes**. Prove it:
+`examples/claims/fnol-triage.{yaml,json}` are the same agent in both syntaxes. To get JSON for any YAML example, `python deploy.py --dry-run <file.yaml>` prints the exact JSON that hits the wire.
 
-```bash
-diff <(python deploy.py --dry-run examples/claims/fnol-triage.yaml) \
-     <(python deploy.py --dry-run examples/claims/fnol-triage.json)
-# (no output = identical request bodies)
-```
+## Workshop tracks
 
-To get JSON for any YAML example: `python deploy.py --dry-run <file.yaml>` prints the exact JSON that hits the wire — copy it into a `.json` file or straight into curl / your SDK of choice.
+### Claims track
 
-## Suggested learning order
+| Lab | Example | Teaches |
+|---|---|---|
+| 1 | `claims/fnol-triage` | first agent — config, one MCP, the gotchas |
+| 2 | `claims/siu-referral` | memory store — learns fraud patterns across sessions |
+| 3 | `claims/adjudication` | multi-agent — 3-tier reader/analyst/writer |
 
-Two tracks depending on your format:
+### Service & Sales track
 
-**Single session** — sequence by complexity, one new concept per lab:
-`claims/fnol-triage` → `service/coverage-explainer` → `service/add-vehicle` → `sales/quote-builder` → `sales/renewal-retention` → `claims/adjudication`
+| Lab | Example | Teaches |
+|---|---|---|
+| 1 | `service/coverage-explainer` | first agent + memory store |
+| 2 | `service/add-vehicle` | human-in-loop write (`requires_action`) |
+| 3 | `sales/quote-builder` | multiple MCP servers |
+| 4 | `sales/renewal-retention` | outcomes rubric (self-grading) |
+| 5 | `service/household-review` | multi-agent — 3-tier readers/writer |
 
-**Two-day, domain-per-day** — Day 1 builds the architecture, Day 2 adds the production features:
-
-| Day | Theme | Labs | Concepts |
-|---|---|---|---|
-| **1** | Build & orchestrate | `claims/fnol-triage` → `claims/adjudication` | agent config shape · 3-tier multi-agent · least-privilege tool grants |
-| **2** | Make it production-grade | `service/coverage-explainer` → `service/add-vehicle` → `sales/quote-builder` → `sales/renewal-retention` | memory · human-in-loop writes · multi-MCP · outcomes/self-grading |
+Each track is self-contained. Run whichever matches your domain; both teach the same CMA concepts. Attendees leave each day with working pilot agents in that domain — no cross-day dependency.
 
 ## Docs
 

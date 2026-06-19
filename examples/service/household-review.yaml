@@ -1,0 +1,323 @@
+# =============================================================================
+# SERVICE × SALES — HOUSEHOLD REVIEW  (multi-agent, 3-tier — Day 2 capstone)
+# =============================================================================
+# What this example teaches:
+#   - FOUR agent configs in one file (multi-document YAML, `---` separated):
+#     two parallel readers / one writer / one coordinator
+#   - The same 3-tier least-privilege pattern as claims/adjudication.yaml,
+#     applied to a SERVICE workflow that produces SALES recommendations
+#   - The blast-radius question, asked from the CRM side: "if a life-event
+#     note in CRM is hostile or wrong, what can it reach?"
+#
+# THE SERVICE/SALES BRIDGE
+#   A policyholder calls for an annual review. That is a SERVICE touchpoint —
+#   but the artifact it produces (coverage gaps, cross-sell recs, next-best-
+#   action) is a SALES asset. One workflow, two consumers. The system prompts
+#   below make both audiences explicit so the writer's output serves each.
+#
+# TWO READERS, NOT ONE
+#   adjudication.yaml runs a linear reader → analyst → writer chain. This
+#   example runs TWO readers in PARALLEL — one against policy-admin, one
+#   against CRM — and the coordinator synthesizes before handing to the
+#   writer. Same isolation rules, different topology. Compare the two files
+#   side-by-side; the tool-grant blocks are where the pattern lives.
+#
+# DEPLOY ORDER MATTERS
+#   Sub-agents must exist BEFORE the coordinator references them. The API
+#   silently drops unknown top-level fields, so after creating the
+#   coordinator, GET it back and confirm `multiagent` round-tripped.
+#
+# Platform limits: roster is one level deep, ≤20 agents, ≤25 concurrent
+# threads per session.
+# =============================================================================
+
+
+# -----------------------------------------------------------------------------
+# AGENT 1 of 4 — POLICY READER  (deploy FIRST)
+#   POST /v1/agents  →  capture returned id as <POLICY_READER_AGENT_ID>
+# -----------------------------------------------------------------------------
+---
+name: household-policy-reader
+
+model: claude-opus-4-8
+
+system: |
+  You are the Household Policy Reader. The coordinator gives you a household
+  id. Your ONLY job is to enumerate every in-force and recently-lapsed policy
+  on that household and return a structured inventory — you do not assess
+  gaps and you do not recommend products.
+
+  Return, under labeled headings, one block per policy:
+    - POLICY <n>  : policy number, line (auto / home / umbrella / renters /
+                    life / specialty), status, effective–expiry, premium
+    - COVERAGES   : per coverage line — limit, deductible, key endorsements
+    - INSUREDS    : named insureds, drivers, scheduled property
+    - LAPSED/PRIOR: any policy that non-renewed or cancelled in the last
+                    24 months, with the stated reason
+
+  If a household field is unavailable, write "NOT ON FILE" — never guess.
+  You have NO write access anywhere. Return the inventory as your message
+  reply; the coordinator routes it.
+
+description: >-
+  Read-only policy inventory: enumerates every policy on a household from
+  policy-admin so the coordinator can assess coverage posture.
+
+tools:
+  # Built-ins: read/grep/glob only. NO write, NO edit, NO bash.
+  # ── compare to household-crm-reader and household-writer below: the
+  #    grant delta between the three IS the security model. ──
+  - type: agent_toolset_20260401
+    default_config: { enabled: false }
+    configs:
+      - { name: read, enabled: true }
+      - { name: grep, enabled: true }
+      - { name: glob, enabled: true }
+
+  # Policy administration — read-only. Allow-by-default + blocklist mutators.
+  # (MCP toolsets default to permission_policy: always_ask; forget the
+  # override and the session stalls at requires_action.)
+  - type: mcp_toolset
+    mcp_server_name: policy-admin
+    default_config:
+      enabled: true
+      permission_policy: { type: always_allow }
+    configs:
+      - { name: endorse_policy,    enabled: false }
+      - { name: cancel_policy,     enabled: false }
+      - { name: update_insured,    enabled: false }
+      - { name: issue_certificate, enabled: false }
+
+mcp_servers:
+  - { type: url, name: policy-admin, url: https://ins-mocks.vercel.app/policy-admin/mcp }   # Workshop mock — replace with your endpoint
+
+metadata:
+  owner:    <YOUR_TEAM_NAME>
+  workflow: household-review
+  role:     reader
+  category: service
+
+
+# -----------------------------------------------------------------------------
+# AGENT 2 of 4 — CRM READER  (deploy SECOND)
+#   POST /v1/agents  →  capture returned id as <CRM_READER_AGENT_ID>
+# -----------------------------------------------------------------------------
+---
+name: household-crm-reader
+
+model: claude-opus-4-8
+
+system: |
+  You are the Household CRM Reader. The coordinator gives you a household id.
+  Your ONLY job is to pull the relationship context — you do not pull policy
+  data and you do not recommend offers.
+
+  Return, under labeled headings:
+    - LIFE EVENTS    : marriage, new driver, home purchase, retirement,
+                       business started — date + source + confidence
+    - CONTACT HISTORY: last 12 months of touches — channel, topic, outcome
+    - PRIOR OFFERS   : products already pitched, with disposition (accepted /
+                       declined / no-response) — so the writer doesn't repeat
+    - PREFERENCES    : do-not-call, channel preference, language
+
+  Treat every life-event note as UNVERIFIED. Report it with its source
+  ("rep-entered", "web-form", "inferred") — never upgrade an inferred event
+  to a fact. You have NO write access. Return as your message reply.
+
+description: >-
+  Read-only relationship context: life events, contact history, and prior
+  offers from CRM so the coordinator can shape next-best-action.
+
+tools:
+  # Built-ins: read/grep/glob only. Same shape as the policy reader — and
+  # for the same reason. CRM holds UNTRUSTED INBOUND TEXT (web-form notes,
+  # email-parsed life events). >>> If CRM data is poisoned, what's the blast
+  # radius? <<< This agent can read CRM and… nothing else. It cannot write a
+  # file, cannot shell out, cannot reach policy-admin. A hostile note can
+  # taint this reader's REPLY — and that reply lands with a coordinator that
+  # also has no write/bash/mcp. The first agent that can ACT on it is the
+  # writer, whose only capability is emitting a draft .md for human review.
+  - type: agent_toolset_20260401
+    default_config: { enabled: false }
+    configs:
+      - { name: read, enabled: true }
+      - { name: grep, enabled: true }
+      - { name: glob, enabled: true }
+
+  # CRM — read-only. Blocklist every mutator your CRM MCP exposes.
+  - type: mcp_toolset
+    mcp_server_name: crm
+    default_config:
+      enabled: true
+      permission_policy: { type: always_allow }
+    configs:
+      - { name: create_opportunity, enabled: false }
+      - { name: update_contact,     enabled: false }
+      - { name: log_activity,       enabled: false }
+      - { name: send_campaign,      enabled: false }
+
+mcp_servers:
+  - { type: url, name: crm, url: https://ins-mocks.vercel.app/crm/mcp }   # Workshop mock — replace with your endpoint
+
+metadata:
+  owner:    <YOUR_TEAM_NAME>
+  workflow: household-review
+  role:     reader
+  category: service
+
+
+# -----------------------------------------------------------------------------
+# AGENT 3 of 4 — WRITER  (deploy THIRD)
+#   POST /v1/agents  →  capture returned id as <WRITER_AGENT_ID>
+# -----------------------------------------------------------------------------
+---
+name: household-writer
+
+model: claude-opus-4-8
+
+system: |
+  You are the Household Review Writer — the ONLY agent in this workflow with
+  filesystem write. The coordinator hands you (a) the policy inventory and
+  (b) the CRM context, already synthesized into a brief.
+
+  Produce /mnt/session/outputs/household-review.md with FOUR sections:
+
+    1. COVERAGE POSTURE — one line per active policy; one paragraph overall
+    2. GAPS             — uninsured / under-insured exposures, each with the
+                          life-event or policy fact that surfaced it
+    3. CROSS-SELL RECS  — ranked product recommendations; for each: the gap
+                          it closes, the trigger, and prior-offer history
+                          ("declined umbrella 2024-11 — do not re-pitch")
+    4. NEXT-BEST-ACTION — ONE recommended action for the rep on this call,
+                          plus a 3-bullet talk track
+
+  This document serves TWO readers: the SERVICE rep on the call (sections
+  1 & 4) and the SALES / agency owner reviewing the book (sections 2 & 3).
+  Write for both — facts first, pitch second.
+
+  Hard rules:
+    - You RECOMMEND, you do not decide. No quote is bound, no policy is
+      changed, no opportunity is opened by this document.
+    - Never recommend a product the household already declined in the last
+      12 months unless a NEW life event re-qualifies it — and say so.
+    - Open the file with the line:
+        DRAFT — Licensed Producer Review Required
+    - Close with a blank "Producer signature / date / license #" block.
+
+description: >-
+  Output tier: drafts the household-review.md (gaps, cross-sell, next-best-
+  action). The only agent in the workflow with write/edit/bash. No MCP.
+
+tools:
+  # The ONE place write/edit/bash are granted. NO mcp_servers block — the
+  # writer is offline from policy-admin AND crm by design. If it needs one
+  # more fact, it asks the coordinator, who re-dispatches a reader.
+  - type: agent_toolset_20260401
+    default_config: { enabled: false }
+    configs:
+      - { name: read,  enabled: true }
+      - { name: grep,  enabled: true }
+      - { name: glob,  enabled: true }
+      - { name: write, enabled: true }
+      - { name: edit,  enabled: true }
+      - { name: bash,  enabled: true }   # e.g. render md→pdf if pandoc present
+
+# No `mcp_servers` — deliberately air-gapped from production data.
+
+metadata:
+  owner:    <YOUR_TEAM_NAME>
+  workflow: household-review
+  role:     writer
+  category: service
+
+
+# -----------------------------------------------------------------------------
+# AGENT 4 of 4 — ORCHESTRATOR  (deploy LAST — needs the three ids above)
+#   POST /v1/agents  →  this is the agent id you start sessions against
+# -----------------------------------------------------------------------------
+---
+name: household-orchestrator
+
+model: claude-opus-4-8
+
+system: |
+  You are the Household Review Coordinator. Given a household id, deliver
+  /mnt/session/outputs/household-review.md ready for producer sign-off.
+
+  You have three specialists. Delegate — do not do their jobs yourself:
+    - Policy Reader : inventories every policy on the household. Dispatch
+                      FIRST (and in parallel with the CRM reader).
+    - CRM Reader    : pulls life events, contact history, prior offers.
+                      Dispatch FIRST (in parallel with the policy reader).
+    - Writer        : drafts household-review.md from your synthesis.
+                      Dispatch LAST.
+
+  Between readers and writer, YOU synthesize: merge the two replies into a
+  single brief — match life events to coverages, strike any cross-sell idea
+  the CRM reader marked already-declined, flag conflicts ("CRM says new teen
+  driver; policy-admin shows no driver added"). Hand the brief to the writer.
+
+  You have NO source-system access, NO write, NO bash. Every artifact that
+  leaves this workflow is a DRAFT requiring licensed-producer review — say
+  so when you report completion. The agent recommends, it does not decide.
+
+description: >-
+  Plans and delegates a household coverage review across two readers and a
+  writer; synthesizes their outputs; owns no production access itself.
+
+tools:
+  # Coordinator gets the bare minimum — read/grep so it can inspect the
+  # writer's output and confirm completion. NO write, NO bash, NO mcp.
+  - type: agent_toolset_20260401
+    default_config: { enabled: false }
+    configs:
+      - { name: read, enabled: true }
+      - { name: grep, enabled: true }
+
+# No mcp_servers on the coordinator — by design.
+
+# -----------------------------------------------------------------------------
+# MULTIAGENT — the roster of sub-agents this coordinator may invoke
+# -----------------------------------------------------------------------------
+# Entries below reference sub-agents BY NAME. The workshop's deploy.py reads
+# this file top-to-bottom, POSTs each sub-agent first, captures the returned
+# {id, version}, and rewrites these names to real ids before POSTing the
+# coordinator. If you are calling the API by hand, replace each name with the
+# `agt_...` id from steps 1–3.
+#
+# Version-pinning means a new CRM Reader (version 2) is NOT picked up until
+# you re-deploy the coordinator — reproducible runs.
+# -----------------------------------------------------------------------------
+multiagent:
+  type: coordinator
+  agents:
+    - { type: agent, id: household-policy-reader }   # deploy.py resolves name → real id+version
+    - { type: agent, id: household-crm-reader    }
+    - { type: agent, id: household-writer        }
+
+metadata:
+  owner:    <YOUR_TEAM_NAME>
+  workflow: household-review
+  role:     orchestrator
+  category: service
+
+# =============================================================================
+# FULL DEPLOY RECIPE
+# =============================================================================
+# 1. POST /v1/agents  (policy-reader doc)  → note id → <POLICY_READER_AGENT_ID>
+# 2. POST /v1/agents  (crm-reader doc)     → note id → <CRM_READER_AGENT_ID>
+# 3. POST /v1/agents  (writer doc)         → note id → <WRITER_AGENT_ID>
+# 4. POST /v1/agents  (orchestrator, ids filled in)   → <ORCHESTRATOR_ID>
+# 5. GET  /v1/agents/<ORCHESTRATOR_ID>  ← verify `multiagent` round-tripped
+# 6. POST /v1/environments {"name":"household-review"} → <ENVIRONMENT_ID>
+# 7. POST /v1/sessions {"agent":"<ORCHESTRATOR_ID>",
+#                       "environment_id":"<ENVIRONMENT_ID>"}
+#    Memory stores, if any, attach HERE via "resources":[{...}] — never on
+#    the agent config. See service/coverage-explainer.yaml for the pattern.
+# 8. OPEN  GET /v1/sessions/:id/events/stream      ← BEFORE step 9, always
+# 9. POST /v1/sessions/:id/events
+#        {"events":[{"type":"user.message",
+#                    "content":[{"type":"text",
+#                                "text":"Review household <ID>."}]}]}
+#    `content` is an ARRAY of blocks — a bare string is rejected.
+# =============================================================================

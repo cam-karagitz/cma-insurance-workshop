@@ -1,0 +1,156 @@
+# =============================================================================
+# CLAIMS PILLAR — SIU REFERRAL SCREEN  (single agent + persistent memory)
+# =============================================================================
+# What this example teaches:
+#   - A claims agent that screens for Special Investigations Unit indicators
+#     (staged-loss patterns, claimant-history flags, narrative inconsistencies)
+#   - A persistent MEMORY STORE the agent reads at the start of every session
+#     and refines over time with fraud-pattern heuristics it has seen hold up
+#   - Why memory attaches at SESSION-create (resources[]), never on the agent
+#
+# THE GOVERNANCE STORY — why a claims leader should be comfortable with this:
+#   Memory-store writes are VERSIONED, ATTRIBUTED to the session that wrote
+#   them, and REDACTABLE after the fact. Your SIU lead reviews what the agent
+#   learned — diffing one version against the last — BEFORE that learning is
+#   mounted on production sessions. The agent never silently teaches itself a
+#   bias; every heuristic it adopts has a human sign-off in the audit trail.
+#
+# Maps to:  POST https://api.anthropic.com/v1/agents
+# Headers:  x-api-key / anthropic-version: 2023-06-01 /
+#           anthropic-beta: managed-agents-2026-04-01
+# =============================================================================
+
+name: siu-referral
+
+model: claude-opus-4-8
+
+# -----------------------------------------------------------------------------
+# SYSTEM PROMPT
+# Note how LIGHT the memory guidance is here — just "a store may be mounted;
+# follow its instructions". The real memory hygiene (read-first, converge,
+# no PII) lives in the per-attachment `instructions` string at session-create
+# (footer step 4). Keeping it there means the same agent runs cleanly with no
+# store attached, and an SIU lead can tune the hygiene rules without shipping
+# a new agent version.
+# -----------------------------------------------------------------------------
+system: |
+  You are the SIU Referral Screener. Given a claim number, you assess whether
+  the claim warrants referral to the Special Investigations Unit and you write
+  that assessment to /mnt/session/outputs/siu-screen.md.
+
+  Workflow:
+    1. Pull the claim, claimant history, and policy via the claims-admin and
+       policy-admin tools.
+    2. If a memory store is mounted at /mnt/memory/siu-patterns/, read it
+       first and apply what it teaches — its attachment instructions govern
+       how you use and maintain it.
+    3. Screen against the indicator classes below. For each, state PRESENT /
+       ABSENT / INSUFFICIENT-DATA and one line of evidence:
+         - STAGED-LOSS  : loss facts consistent with known staging patterns
+         - HISTORY      : prior-claim frequency, prior SIU flags, lapse/rebind
+         - INCONSISTENCY: FNOL vs. recorded statement vs. docs vs. policy dates
+         - POLICY-TIMING: loss proximate to inception, endorsement, or lapse
+    4. Emit siu-screen.md with: indicator table, Recommended REFER / NO-REFER
+       / NEEDS-INFO, a 2–3 sentence rationale, and the missing facts list.
+
+  Hard rules:
+    - You RECOMMEND, you do not decide. A REFER recommendation is a request
+      for SIU triage — it is not a fraud finding and you must say so.
+    - Never use protected-class attributes (or proxies for them) as indicators.
+    - Never write claimant PII into the memory store — patterns only.
+    - End siu-screen.md with the line:
+        DRAFT — SIU Analyst Review Required
+
+description: >-
+  Screens a claim for SIU referral indicators (staged loss, claimant history,
+  inconsistencies); learns durable fraud-pattern heuristics across sessions.
+
+# -----------------------------------------------------------------------------
+# TOOLS
+# -----------------------------------------------------------------------------
+tools:
+
+  # Built-in sandbox tools — deny-by-default, allowlist only what's needed.
+  # Needs read/grep/glob to consult the memory mount, and write to emit
+  # /mnt/session/outputs/siu-screen.md. NO bash — a screener has no reason
+  # to shell out, and bash on an agent that reads claimant-supplied text is
+  # exactly the blast-radius you don't want.
+  - type: agent_toolset_20260401
+    default_config:
+      enabled: false
+    configs:
+      - { name: read,  enabled: true }   # read /mnt/memory/siu-patterns/*
+      - { name: grep,  enabled: true }   # search memory notes by keyword
+      - { name: glob,  enabled: true }   # list memory files
+      - { name: write, enabled: true }   # emit /mnt/session/outputs/siu-screen.md
+
+  # Claims administration system — strictly read-only. The screener inspects
+  # the claim file and claimant history; it never touches the claim record.
+  # >>> MCP toolsets default to permission_policy: always_ask — forget the
+  # override and the session stalls at stop_reason: requires_action. <<<
+  - type: mcp_toolset
+    mcp_server_name: claims-admin
+    default_config:
+      enabled: true
+      permission_policy: { type: always_allow }
+    configs:
+      - { name: update_claim,  enabled: false }   # blocklist every mutator
+      - { name: set_reserve,   enabled: false }
+      - { name: add_note,      enabled: false }
+      - { name: refer_to_siu,  enabled: false }   # the AGENT does not refer —
+      - { name: close_claim,   enabled: false }   # a human acts on the draft
+
+  # Policy administration — read-only. Needed for inception/endorsement/lapse
+  # dates so POLICY-TIMING indicators can be assessed.
+  - type: mcp_toolset
+    mcp_server_name: policy-admin
+    default_config:
+      enabled: true
+      permission_policy: { type: always_allow }
+    configs:
+      - { name: endorse_policy, enabled: false }
+      - { name: cancel_policy,  enabled: false }
+      - { name: update_insured, enabled: false }
+
+mcp_servers:
+  - { type: url, name: claims-admin, url: https://ins-mocks.vercel.app/claims-admin/mcp }   # Workshop mock — replace with your endpoint
+  - { type: url, name: policy-admin, url: https://ins-mocks.vercel.app/policy-admin/mcp }   # Workshop mock — replace with your endpoint
+
+# -----------------------------------------------------------------------------
+# METADATA — convention only (API stores opaquely, ≤512 chars/value).
+# -----------------------------------------------------------------------------
+metadata:
+  owner:    <YOUR_TEAM_NAME>
+  workflow: siu-referral
+  role:     single-agent
+  category: claims
+
+# =============================================================================
+# DEPLOY + RUN — memory attaches at SESSION via resources[], NOT on the agent
+# =============================================================================
+# 1. POST /v1/memory_stores {"name":"siu-patterns"}             → memstore_...
+# 2. POST /v1/agents        (this file as JSON)                 → agt_...
+# 3. POST /v1/environments  {"name":"claims"}                   → env_...
+#
+# 4. POST /v1/sessions  ← MEMORY MOUNTS HERE:
+#    {
+#      "agent": "agt_...",
+#      "environment_id": "env_...",
+#      "resources": [{
+#        "type": "memory_store",
+#        "memory_store_id": "memstore_...",
+#        "access": "read_write",
+#        "instructions": "Durable SIU heuristics under lessons/. BEFORE screening, list and read every file there. Before going idle: would a FUTURE screener want what you just learned? You already read lessons/ — so you KNOW what's there. Already covered → write nothing. Nuance to an existing pattern → EDIT that file in place. Create a new file ONLY when it fits no existing topic. Target ≤10 files; merge or prune when over. Store the PATTERN + the tell + the false-positive caveat — never claim numbers, names, VINs, addresses, or any claimant PII, and never raw transcripts."
+#      }]
+#    }
+#
+#    ⚠️  CONVERGE, DON'T ACCUMULATE. The store should trend toward a small,
+#        stable set of high-signal heuristics — not a growing pile of case
+#        notes. Every write is versioned + attributed; your SIU lead diffs
+#        and approves new lessons before they mount on production sessions.
+#
+# 5. Open  GET /v1/sessions/:id/events/stream   ← BEFORE step 6, always
+# 6. POST /v1/sessions/:id/events {"events":[{"type":"user.message",
+#       "content":[{"type":"text","text":"Screen claim <ID> for SIU."}]}]}
+#    `content` must be an ARRAY of blocks, not a bare string.
+# =============================================================================
