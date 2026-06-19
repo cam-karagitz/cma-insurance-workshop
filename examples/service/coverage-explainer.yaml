@@ -1,0 +1,146 @@
+# =============================================================================
+# SERVICE / COVERAGE EXPLAINER (single agent + persistent memory store)
+# =============================================================================
+# What this shows:
+#   - A customer-service agent that explains coverage in plain language,
+#     always citing the policy form + section it answered from
+#   - A persistent memory store of "question pattern → canonical answer"
+#     that the agent reads on every session and curates over time
+#
+# ⚠️  KEY LESSON OF THIS EXAMPLE — MEMORY ATTACHES AT SESSION, NOT AGENT:
+#   There is no `memory:` field on POST /v1/agents. The store is mounted via
+#   `resources[]` on POST /v1/sessions (see footer). The same agent config
+#   runs with or without memory; the per-attachment `instructions` string is
+#   what makes the agent memory-aware. The instructions field IS the memory
+#   system — CMA does no automatic retrieval.
+#
+#   Memory hygiene = CONVERGE, don't accumulate. The store should trend
+#   toward a small, stable set of high-value notes — not a transcript log
+#   that grows forever. The attachment instructions in step 4 below show the
+#   pattern: read-first, edit-existing, create-only-when-new-topic, cap ~10.
+#
+# Maps to:  POST https://api.anthropic.com/v1/agents
+# Headers:  x-api-key / anthropic-version: 2023-06-01 /
+#           anthropic-beta: managed-agents-2026-04-01
+# =============================================================================
+
+name: coverage-explainer
+
+model: claude-opus-4-8
+
+# -----------------------------------------------------------------------------
+# SYSTEM PROMPT
+# The prompt references the memory mount point but does NOT teach memory
+# hygiene — that lives in the resources[].instructions field at session-create
+# so it only applies when a store is actually attached.
+# -----------------------------------------------------------------------------
+system: |
+  You are the Coverage Explainer. A policyholder (or a service rep on their
+  behalf) asks what their policy does or does not cover. You answer in plain
+  English and cite the exact form + section every time.
+
+  Workflow per question:
+    1. Pull the policy via the policy-admin tools (get_policy, get_forms).
+    2. If a memory store is mounted at /mnt/memory/coverage-patterns/, check
+       it for a matching question pattern BEFORE drafting from scratch — its
+       attachment instructions tell you how to use it.
+    3. Answer in ≤150 words. Structure:
+         - One-sentence direct answer
+         - Two or three sentences of plain-English explanation
+         - "Source: <FORM-ID> §<section>"
+    4. If the question is really a claims question, a sales / new-business
+       question, or a request for legal advice — say so, route it, and stop.
+
+  Hard rules:
+    - You EXPLAIN coverage as written; you do not bind, endorse, or adjust.
+      The agent recommends, it does not decide.
+    - If coverage is ambiguous or fact-dependent, say "An underwriter will
+      need to confirm" — never guess in the customer's favor or against it.
+    - Every answer ends with the line:
+        DRAFT — Service Rep Review Required
+
+description: >-
+  Explains policyholder coverage questions in plain language with form +
+  section citations; curates a persistent memory of common Q&A patterns.
+
+# -----------------------------------------------------------------------------
+# TOOLS
+# -----------------------------------------------------------------------------
+tools:
+
+  # Built-in sandbox tools — deny-by-default, allowlist only what's needed
+  # to read the memory mount. No write/edit/bash: the only persistent output
+  # is the memory store (handled by the runtime) and the chat reply.
+  - type: agent_toolset_20260401
+    default_config:
+      enabled: false
+    configs:
+      - { name: read,  enabled: true }   # read /mnt/memory/coverage-patterns/*
+      - { name: grep,  enabled: true }   # search memory notes by keyword
+      - { name: glob,  enabled: true }   # list memory files
+
+  # Policy administration system over MCP.
+  # >>> MCP toolsets default to permission_policy: always_ask — forget the
+  # override below and the session stalls at stop_reason: requires_action
+  # waiting for an approval your client never sends. <<<
+  - type: mcp_toolset
+    mcp_server_name: policy-admin
+    default_config:
+      enabled: true
+      permission_policy: { type: always_allow }
+    configs:
+      # Coverage explanation is strictly read-only against policy admin.
+      # Blocklist every mutator your server exposes:
+      - { name: endorse_policy,    enabled: false }
+      - { name: cancel_policy,     enabled: false }
+      - { name: update_insured,    enabled: false }
+      - { name: issue_certificate, enabled: false }
+
+mcp_servers:
+  - type: url
+    name: policy-admin
+    url:  https://ins-mocks.vercel.app/policy-admin/mcp   # Workshop mock (synthetic data). Replace with your endpoint — see ../MCP-SERVERS.md
+
+# -----------------------------------------------------------------------------
+# METADATA — free-form key/value (≤512 chars per value). The API stores these
+# opaquely; the keys below are a CONVENTION so dashboards can filter agents.
+# -----------------------------------------------------------------------------
+metadata:
+  owner:    <YOUR_TEAM_NAME>
+  workflow: coverage-explainer
+  role:     single-agent
+  category: service
+
+# =============================================================================
+# DEPLOY + RUN — memory attaches at SESSION-CREATE, not on the agent
+# =============================================================================
+# 1. POST /v1/memory_stores {"name":"coverage-patterns"}        → memstore_...
+# 2. POST /v1/agents        (this file as JSON)                 → agt_...
+# 3. POST /v1/environments  {"name":"service"}                  → env_...
+#
+# 4. POST /v1/sessions  ← MEMORY MOUNTS HERE, via resources[]:
+#    {
+#      "agent": "agt_...",
+#      "environment_id": "env_...",
+#      "resources": [{
+#        "type": "memory_store",
+#        "memory_store_id": "memstore_...",
+#        "access": "read_write",
+#        "instructions": "Your curated coverage-Q&A patterns. BEFORE answering, list and read every file under lessons/. Before going idle, reflect: would a FUTURE Coverage Explainer want what you just learned? You already read lessons/ — so you KNOW what's there. Already covered → write nothing. Nuance to an existing topic → EDIT that file in place. Only create a new file when it fits no existing topic. Target ≤10 files total; merge or prune when you exceed it. Store the question PATTERN + canonical answer + citation — never PII (names, policy numbers, VINs, addresses) and never session transcripts."
+#      }]
+#    }
+#
+#    ⚠️  The `instructions` string (≤4096 chars) IS the memory system. Put
+#        read+write hygiene HERE, not in the agent's `system` prompt — so it
+#        scopes to sessions that actually mount the store, and so you can
+#        run the same agent memoryless for A/B comparison.
+#
+# 5. Open  GET /v1/sessions/:id/events/stream   ← BEFORE step 6, always
+# 6. POST /v1/sessions/:id/events {"events":[{"type":"user.message",
+#       "content":[{"type":"text","text":"Policy <ID>: does my comp cover
+#       a cracked windshield?"}]}]}
+#    `content` must be an ARRAY of blocks, not a bare string.
+#
+# Updating later: include {"version": N, ...changes} in the PATCH body —
+# N comes from GET /v1/agents/:id (optimistic concurrency).
+# =============================================================================

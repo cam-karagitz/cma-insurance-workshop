@@ -1,0 +1,174 @@
+# =============================================================================
+# EXAMPLE — AUTO QUOTE BUILDER (single agent, multiple MCP servers)
+# =============================================================================
+# What this shows (everything from Example 01, plus):
+#   - THREE remote MCP servers on one agent, composed into a single workflow
+#   - Per-server tool blocklists (each server gets its own mcp_toolset entry)
+#   - A truly read-only agent against external systems: every MCP write tool
+#     is disabled; the only "write" is the sandbox quote file
+#
+# ⚠️  KEY LESSON OF THIS EXAMPLE:
+#   Real workflows rarely live behind one system. A quote needs vehicle data
+#   (VIN decode), driver risk data (MVR/CLUE), AND a rating call — three
+#   different backends. Each gets its own `mcp_servers` entry AND its own
+#   `mcp_toolset` entry. The toolset is where you set the permission policy
+#   and blocklist mutators *per server* — there is no global MCP setting.
+#
+# Maps to:  POST https://api.anthropic.com/v1/agents
+# Headers:  x-api-key / anthropic-version: 2023-06-01 /
+#           anthropic-beta: managed-agents-2026-04-01
+# =============================================================================
+
+name: quote-builder
+
+model: claude-opus-4-8
+
+# -----------------------------------------------------------------------------
+# SYSTEM PROMPT — note the explicit data-gathering ORDER. With three MCPs
+# available the model will otherwise pick its own sequence; pinning the order
+# makes runs reproducible and the SSE event stream easy to narrate in a demo.
+# -----------------------------------------------------------------------------
+system: |
+  You are the Auto Quote Builder. Given a prospect's basic info (name, ZIP,
+  VIN, driver's-license number) you assemble the risk picture and produce a
+  three-tier coverage quote.
+
+  Gather data IN THIS ORDER — do not skip ahead:
+    1. vehicle-data   → decode the VIN: year/make/model/trim, MSRP, safety
+                        equipment, theft rating, symbol.
+    2. driver-history → pull MVR (violations, suspensions) and CLUE
+                        (prior claims, all carriers, last 5 years).
+    3. rating-engine  → submit the assembled risk profile and request rates
+                        for exactly three coverage tiers:
+                          • STATE-MINIMUM  — statutory liability limits only
+                          • STANDARD       — 100/300/100 + comp/coll $500 ded
+                          • PREFERRED      — 250/500/250 + comp/coll $250 ded
+                                             + rental + roadside
+
+  Then write /mnt/session/outputs/quote.md with:
+    - One section per tier: coverages table, 6-month premium, key surcharges
+      or discounts applied (cite which MVR/CLUE/vehicle fact triggered each).
+    - A "Risk Summary" section listing every rating-relevant fact you used,
+      so an underwriter can audit the inputs.
+    - Final line: "DRAFT QUOTE — Agent/Underwriter Review Required. Not a
+      binding offer of insurance."
+
+  Hard rules:
+    - You QUOTE, you do not BIND. Never call a bind/issue tool — none are
+      granted, and you must not ask for one.
+    - If MVR or CLUE returns a no-hit, say so explicitly in the Risk Summary
+      and proceed with base-class rates; do not invent history.
+    - If the rating engine declines the risk, write the decline reason to
+      quote.md and stop — do not try alternate tiers.
+
+description: >-
+  Assembles an auto risk profile from VIN decode + MVR/CLUE, calls the rating
+  engine, and presents three coverage tiers with priced premiums.
+
+# -----------------------------------------------------------------------------
+# TOOLS
+# -----------------------------------------------------------------------------
+tools:
+
+  # --- Built-in sandbox tools -------------------------------------------------
+  # Deny-by-default, allowlist only what's needed to emit the quote file.
+  - type: agent_toolset_20260401
+    default_config:
+      enabled: false
+    configs:
+      - { name: read,  enabled: true }
+      - { name: grep,  enabled: true }
+      - { name: glob,  enabled: true }
+      - { name: write, enabled: true }   # /mnt/session/outputs/quote.md
+      # No `edit`, no `bash` — one-shot quote generation needs neither.
+
+  # --- MCP #1: Vehicle data (VIN decode, symbols, safety) --------------------
+  # Every mcp_toolset needs its OWN permission_policy override. There is no
+  # "set it once for all MCPs" — forget it on any one server and that server's
+  # calls stall at requires_action.
+  - type: mcp_toolset
+    mcp_server_name: vehicle-data
+    default_config:
+      enabled: true
+      permission_policy: { type: always_allow }
+    configs:
+      # vehicle-data is reference-only by nature, but block admin tools anyway:
+      - { name: update_vehicle_record, enabled: false }
+      - { name: override_symbol,       enabled: false }
+
+  # --- MCP #2: Driver history (MVR + CLUE reports) ---------------------------
+  - type: mcp_toolset
+    mcp_server_name: driver-history
+    default_config:
+      enabled: true
+      permission_policy: { type: always_allow }
+    configs:
+      # MVR/CLUE pulls are billable third-party orders. The "order_*" tools
+      # *create* a new chargeable inquiry — block them so the agent can only
+      # READ reports already on file for this prospect, not rack up fees.
+      - { name: order_mvr,       enabled: false }
+      - { name: order_clue,      enabled: false }
+      - { name: dispute_record,  enabled: false }
+
+  # --- MCP #3: Rating engine -------------------------------------------------
+  - type: mcp_toolset
+    mcp_server_name: rating-engine
+    default_config:
+      enabled: true
+      permission_policy: { type: always_allow }
+    configs:
+      # `rate_risk` (read) returns a premium; `bind_quote` / `issue_policy`
+      # (write) would create a real contract. Quote builder must NEVER bind.
+      - { name: bind_quote,      enabled: false }
+      - { name: issue_policy,    enabled: false }
+      - { name: override_rate,   enabled: false }
+      - { name: apply_uw_credit, enabled: false }
+
+# -----------------------------------------------------------------------------
+# MCP SERVERS — three separate streamable-HTTP endpoints
+# -----------------------------------------------------------------------------
+# Each `name` here is referenced by exactly one `mcp_toolset` above. Auth for
+# each (API keys, OAuth tokens) is supplied via Vaults at session-create time,
+# not in this config — never put credentials in the agent body.
+# -----------------------------------------------------------------------------
+mcp_servers:
+  - { type: url, name: vehicle-data,   url: <YOUR_VEHICLE_DATA_MCP_URL>   }  # VIN decode / symbols
+  - { type: url, name: driver-history, url: <YOUR_DRIVER_HISTORY_MCP_URL> }  # MVR + CLUE
+  - { type: url, name: rating-engine,  url: <YOUR_RATING_ENGINE_MCP_URL>  }  # pricing
+
+# -----------------------------------------------------------------------------
+# METADATA — free-form key/value (≤512 chars per value)
+# -----------------------------------------------------------------------------
+# The API does not interpret these. The four keys below are this kit's
+# CONVENTION so dashboards/scripts can group agents — adopt your own scheme,
+# just be consistent across every agent your team deploys.
+# -----------------------------------------------------------------------------
+metadata:
+  owner:    <YOUR_TEAM_NAME>            # e.g. sales-platform
+  workflow: new-business-quote
+  role:     single-agent
+  category: sales
+
+# =============================================================================
+# DEPLOY + RUN
+# =============================================================================
+# 1. POST /v1/agents        (this file as JSON)                  → agt_...
+# 2. POST /v1/environments  {"name":"quote-builder"}             → env_...
+# 3. POST /v1/sessions      {"agent":"agt_...",
+#                            "environment_id":"env_..."}         → sess_...
+#
+#    To pass per-server credentials, attach a Vault on the session:
+#      "resources":[{"type":"vault","vault_id":"<VAULT_ID>"}]
+#    The vault maps secrets onto each mcp_server by name — see docs/vaults.md.
+#
+# 4. >>> OPEN THE SSE STREAM FIRST <<<
+#      GET /v1/sessions/:id/events/stream
+#    Nothing executes until an event arrives; if you POST step 5 before
+#    opening this stream you miss the early agent.* events.
+#
+# 5. POST /v1/sessions/:id/events
+#      {"events":[{"type":"user.message",
+#                  "content":[{"type":"text",
+#                              "text":"Quote: ZIP 20815, VIN <VIN>, DL <NUM>"}]}]}
+#    `content` is an ARRAY of blocks, never a bare string.
+# =============================================================================

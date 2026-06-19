@@ -1,0 +1,154 @@
+# =============================================================================
+# CLAIMS PILLAR — FNOL TRIAGE  (single agent, simplest possible)
+# =============================================================================
+# What this example teaches:
+#   - The minimum viable agent config: name + model + system prompt
+#   - One remote MCP server connection (your claims-admin system)
+#   - Built-in sandbox tools, granted by allowlist
+#   - The two permission gotchas that cause 90% of first-run failures
+#
+# This is the workshop's STARTING POINT. Every other claims example builds
+# on the shape you see here. Get this one running end-to-end before moving
+# to claims/adjudication.yaml.
+#
+# This YAML maps 1:1 to the JSON body of:
+#   POST https://api.anthropic.com/v1/agents
+#
+# Required HTTP headers on every Managed Agents call:
+#   x-api-key:          <YOUR_ANTHROPIC_API_KEY>
+#   anthropic-version:  2023-06-01
+#   anthropic-beta:     managed-agents-2026-04-01
+# =============================================================================
+
+# REQUIRED — human-readable identifier. Need not be globally unique, but you
+# will see it in the platform console agent list, so make it findable.
+name: fnol-triage
+
+# REQUIRED — model id. Agents are *versioned* server-side, so pin explicitly
+# rather than using an alias. When you change this field you create a new
+# agent version; running sessions keep the version they started with.
+model: claude-opus-4-8
+
+# REQUIRED — the system prompt. NOTE: the API field is `system`, not
+# `system_prompt`. This is the agent's standing instructions for every session.
+#
+# Tip: in real projects, keep this in its own prompts/fnol-triage.md file
+# and read it into the JSON at deploy time. Inline here for the workshop.
+system: |
+  You are the FNOL Triage agent. You receive a First Notice of Loss
+  reference and classify it so it can be routed to the right adjuster queue.
+
+  For each claim you must produce exactly three outputs, written as a single
+  markdown block to /mnt/session/outputs/triage.md:
+
+    1. SEVERITY     — one of: low / moderate / severe / catastrophic
+    2. LINE         — one of: auto-pd / auto-bi / property / glass / other
+    3. ROUTING NOTE — 2–3 sentences for the receiving adjuster
+
+  Hard rules:
+    - You RECOMMEND, you do not decide. Prefix every output "Recommended:".
+    - Never deny coverage. If you spot a possible exclusion, flag it for
+      human review — do not act on it.
+    - If the FNOL is incomplete, classify with what you have and list the
+      missing fields under "Needs from claimant:".
+    - End every triage.md with the line:
+        DRAFT — Adjuster Review Required
+
+# OPTIONAL — one-line summary shown in the platform console agent list.
+description: >-
+  Classifies incoming FNOL by severity and line of business, writes a
+  routing recommendation for the adjuster queue.
+
+# -----------------------------------------------------------------------------
+# TOOLS — what the agent is allowed to call
+# -----------------------------------------------------------------------------
+# Two kinds of toolset:
+#   - agent_toolset_20260401  → built-in sandbox tools (read/write/grep/bash…)
+#   - mcp_toolset             → tools exposed by a remote MCP server you run
+#
+# Omit this block entirely for a pure chat agent with no tools.
+# -----------------------------------------------------------------------------
+tools:
+
+  # --- Built-in sandbox tools -------------------------------------------------
+  # These operate on the session's ephemeral container filesystem
+  # (/mnt/session/...). They are DENY-BY-DEFAULT: nothing is enabled unless
+  # you list it under `configs`. This is the safe default — start narrow.
+  - type: agent_toolset_20260401
+    default_config:
+      enabled: false                    # deny everything not listed below
+    configs:
+      - { name: read,  enabled: true }  # read files in the sandbox
+      - { name: grep,  enabled: true }  # search file contents
+      - { name: glob,  enabled: true }  # list files by pattern
+      - { name: write, enabled: true }  # needed to emit /mnt/session/outputs/triage.md
+      # `bash` deliberately NOT granted — this agent has no reason to shell out.
+
+  # --- Your claims system, exposed over MCP ----------------------------------
+  # `mcp_server_name` must match a `name` under `mcp_servers:` below.
+  #
+  # >>> GOTCHA #2 — the most common first-run hang <<<
+  # Unlike the built-in toolset, MCP toolsets default to
+  # permission_policy: always_ask. If you forget the override below, the
+  # session will pause at `stop_reason: requires_action` waiting for a
+  # human tool-approval that your client never sends. Always set
+  # `always_allow` (or wire up the approval flow in your client).
+  - type: mcp_toolset
+    mcp_server_name: claims-admin
+    default_config:
+      enabled: true                     # MCP toolsets are allow-by-default…
+      permission_policy:
+        type: always_allow              # …but ASK-by-default. Override here.
+    configs:
+      # Then BLOCKLIST individual write tools for least-privilege.
+      # Triage is read-only against the claims system — it should never
+      # mutate a claim record. List every write-capable tool your MCP
+      # server exposes and disable it:
+      - { name: update_claim,    enabled: false }
+      - { name: assign_adjuster, enabled: false }
+      - { name: close_claim,     enabled: false }
+
+# -----------------------------------------------------------------------------
+# MCP SERVERS — remote tool servers this agent can reach
+# -----------------------------------------------------------------------------
+# Each entry is a streamable-HTTP MCP endpoint that *you* host. The Managed
+# Agents runtime opens an outbound connection to it from the session container.
+# Auth (OAuth headers, API keys) is attached via Vaults at session-create time,
+# not here — keep secrets out of the agent config.
+# -----------------------------------------------------------------------------
+mcp_servers:
+  - type: url
+    name: claims-admin                  # referenced by mcp_toolset above
+    url:  https://ins-mocks.vercel.app/claims-admin/mcp         # Workshop mock (synthetic data). Replace with your endpoint — see ../MCP-SERVERS.md
+
+# -----------------------------------------------------------------------------
+# METADATA — free-form string key/value pairs
+# -----------------------------------------------------------------------------
+# The API stores these opaquely (it does not act on them). Hard limit: 512
+# chars per value. The {owner, workflow, role, category} schema below is a
+# CONVENTION ONLY — use it so your own dashboards / scripts can filter and
+# group agents. A shared workspace fills up fast and unlabeled agents become
+# impossible to manage.
+# -----------------------------------------------------------------------------
+metadata:
+  owner:    <YOUR_TEAM_NAME>            # e.g. claims-platform
+  workflow: fnol-triage
+  role:     single-agent
+  category: claims
+
+# =============================================================================
+# WHAT HAPPENS NEXT (not part of this file — this is the deploy recipe)
+# =============================================================================
+# 1. POST this body to /v1/agents                  → returns { id: "agt_..." }
+# 2. POST /v1/environments {name, packages?}       → returns { id: "env_..." }
+# 3. POST /v1/sessions {agent: "agt_...", environment_id: "env_..."}
+# 4. >>> GOTCHA #1 <<<  Open the SSE stream BEFORE sending any events:
+#      GET /v1/sessions/:id/events/stream
+#    Session-create only provisions the container; nothing runs until an
+#    event arrives. If you POST step 5 before opening this stream you will
+#    miss the early `agent.*` events and the demo looks frozen.
+# 5. POST /v1/sessions/:id/events
+#      {"events":[{"type":"user.message",
+#                  "content":[{"type":"text","text":"Triage claim <ID>"}]}]}
+#    NOTE: `content` must be an ARRAY of content blocks, not a bare string.
+# =============================================================================

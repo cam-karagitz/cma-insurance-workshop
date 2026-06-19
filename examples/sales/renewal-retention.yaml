@@ -1,0 +1,187 @@
+# =============================================================================
+# EXAMPLE — RENEWAL RETENTION (single agent + OUTCOMES rubric + memory)
+# =============================================================================
+# What this shows (everything from Examples 01–02, plus):
+#   - The OUTCOMES pattern: a separate grader scores each run against a
+#     written rubric, and the score is fed back into a memory store so the
+#     agent learns which retention angles actually land
+#   - The agent ↔ grader contract: the grader sees ONLY files under
+#     /mnt/session/outputs/ — nothing from chat, nothing from scratch space
+#
+# ⚠️  KEY LESSON OF THIS EXAMPLE:
+#   Outcomes, like memory stores, are NOT a field on the agent config. The
+#   rubric attaches at SESSION-CREATE time via `resources[]`. So this YAML
+#   looks like a plain single agent — the entire self-learning loop lives in
+#   the DEPLOY/RUN footer. The rubric markdown itself is a sibling file:
+#   renewal-retention-rubric.md. Write the rubric FIRST; it is the spec the
+#   agent is built against, not an afterthought.
+#
+# Why this workflow:
+#   Direct-to-consumer auto carriers win on acquisition but historically
+#   leak on the back end — the policyholder who got a "switch and save"
+#   message coming in is just as receptive to one going out. The highest-
+#   leverage moment is the renewal notice: a rate increase with no context
+#   is the #1 churn trigger. This agent gets ahead of it.
+#
+# Maps to:  POST https://api.anthropic.com/v1/agents
+# Headers:  x-api-key / anthropic-version: 2023-06-01 /
+#           anthropic-beta: managed-agents-2026-04-01
+# =============================================================================
+
+name: renewal-retention
+
+model: claude-opus-4-8
+
+# -----------------------------------------------------------------------------
+# SYSTEM PROMPT
+# Two things to notice:
+#   1. The output contract is rigid (fixed filenames, fixed headings). The
+#      grader is artifact-only — if the agent writes a brilliant offer to the
+#      wrong path, the grader scores it zero. Spell the contract out.
+#   2. Memory hygiene is NOT in here — it lives in the memory-store
+#      attachment `instructions` (footer step 4b), so it only applies when a
+#      store is actually mounted.
+# -----------------------------------------------------------------------------
+system: |
+  You are the Renewal Retention agent. You receive a policy number that is
+  45 days from renewal. Your job is to assess churn risk and draft a
+  personalized retention outreach for the assigned sales rep to send.
+
+  Step 1 — Assemble the renewal picture (policy-admin + market-intel tools):
+    • Expiring vs. renewal premium, and the line-item drivers of any change
+      (territory revision, vehicle symbol drift, loss surcharge, tenure credit)
+    • Claims in the last 36 months: count, type, at-fault?, paid amount
+    • Tenure, payment history, number of policies in the household
+    • Telematics enrollment status and current discount %
+    • Competitor rate signal for this ZIP/vehicle/driver-class, if available
+
+  Step 2 — Write /mnt/session/outputs/risk.md with EXACTLY these headings:
+    ## Churn Risk: <low | medium | high>
+    ## Signals
+      - one bullet per fact that moved the score, each citing its source tool
+    ## Rate-Change Driver
+      - the single biggest reason premium moved, in one plain-English sentence
+
+  Step 3 — Write /mnt/session/outputs/offer.md with EXACTLY these headings:
+    ## Recommended Talking Point
+      - 2–3 sentences the rep can say verbatim that EXPLAIN the rate change
+        before asking for anything
+    ## Recommended Offer
+      - choose from: telematics-enroll discount, multi-policy bundle quote
+        (renters/home/umbrella), tenure loyalty credit, deductible re-tier,
+        pay-in-full discount — and state the expected $ impact
+    ## Authority Check
+      - state whether the offer is within standard rep authority or needs
+        supervisor/underwriter approval, and why
+    ## DRAFT — Rep Review Required
+      - this heading must appear, verbatim, as the final section
+
+  Hard rules:
+    - You RECOMMEND, you do not decide. You do not send anything; the rep does.
+    - Never promise a rate the rating engine has not returned.
+    - Never offer a credit outside the authority matrix — flag it instead.
+    - If churn risk is LOW, the offer may be "no proactive outreach needed" —
+      that is a valid, gradeable answer.
+
+description: >-
+  Scores churn risk on upcoming auto renewals and drafts a personalized
+  retention talking-point + offer; graded against a rubric and self-improving
+  via a memory store.
+
+# -----------------------------------------------------------------------------
+# TOOLS
+# -----------------------------------------------------------------------------
+tools:
+
+  # Built-ins — deny-by-default, allowlist. `write` is required: the grader
+  # only sees /mnt/session/outputs/, so an agent without `write` would score
+  # zero on every run regardless of reasoning quality.
+  - type: agent_toolset_20260401
+    default_config:
+      enabled: false
+    configs:
+      - { name: read,  enabled: true }
+      - { name: grep,  enabled: true }
+      - { name: glob,  enabled: true }
+      - { name: write, enabled: true }   # risk.md + offer.md
+      - { name: edit,  enabled: true }   # lets the agent revise after self-review
+
+  # Policy admin — read-only. Override always_ask → always_allow per server.
+  - type: mcp_toolset
+    mcp_server_name: policy-admin
+    default_config:
+      enabled: true
+      permission_policy: { type: always_allow }
+    configs:
+      - { name: endorse_policy,  enabled: false }
+      - { name: cancel_policy,   enabled: false }
+      - { name: apply_discount,  enabled: false }   # rep applies it, not the agent
+      - { name: change_renewal,  enabled: false }
+
+  # Market intel — competitor rate signals, territory trends. Read-only.
+  - type: mcp_toolset
+    mcp_server_name: market-intel
+    default_config:
+      enabled: true
+      permission_policy: { type: always_allow }
+    configs:
+      - { name: refresh_index, enabled: false }   # admin/batch tool — not for agents
+
+mcp_servers:
+  - { type: url, name: policy-admin, url: https://ins-mocks.vercel.app/policy-admin/mcp }
+  - { type: url, name: market-intel, url: <YOUR_MARKET_INTEL_MCP_URL> }
+
+# -----------------------------------------------------------------------------
+# METADATA — free-form, this kit's convention only
+# -----------------------------------------------------------------------------
+metadata:
+  owner:    <YOUR_TEAM_NAME>
+  workflow: renewal-retention
+  role:     single-agent
+  category: sales
+
+# =============================================================================
+# DEPLOY + RUN — outcomes AND memory both attach at session time
+# =============================================================================
+# 1. POST /v1/memory_stores {"name":"retention-learnings"}       → memstore_...
+# 2. POST /v1/agents        (this file as JSON)                  → agt_...
+# 3. POST /v1/environments  {"name":"renewal-retention"}         → env_...
+#
+# 4. POST /v1/sessions  ← rubric + memory attach HERE, via resources[]:
+#    {
+#      "agent": "agt_...",
+#      "environment_id": "env_...",
+#      "resources": [
+#
+#        # 4a — OUTCOMES: the grader runs after `session.idle`, reads ONLY
+#        #      /mnt/session/outputs/**, scores against the rubric, and emits
+#        #      an `outcome.result` event {score, per-criterion, rationale}.
+#        { "type": "outcome",
+#          "rubric": "<contents of renewal-retention-rubric.md>",
+#          "grader_model": "claude-opus-4-8" },
+#
+#        # 4b — MEMORY: read/write store. The `instructions` string IS the
+#        #      memory system — without it the agent ignores the mount.
+#        #      This is also where the self-learning loop closes: tell the
+#        #      agent to record what the grader rewarded.
+#        { "type": "memory_store",
+#          "memory_store_id": "memstore_...",
+#          "access": "read_write",
+#          "instructions": "Retention-angle learnings. BEFORE drafting, read every file under lessons/. AFTER the outcome.result event arrives, reflect: which offer angle scored well for THIS rate-driver + risk profile? If lessons/ already covers it → write nothing. Nuance to an existing pattern → EDIT that file. New pattern → new file under lessons/. CONVERGE on <10 files; general patterns, NEVER policy numbers, names, or VINs." }
+#      ]
+#    }
+#
+# 5. OPEN  GET /v1/sessions/:id/events/stream     ← BEFORE step 6
+# 6. POST /v1/sessions/:id/events {"events":[{"type":"user.message",
+#       "content":[{"type":"text","text":"Renewal review: policy <ID>"}]}]}
+#
+# 7. WATCH the stream for:
+#      agent.*          — the work
+#      session.idle     — agent finished writing outputs/
+#      outcome.result   — grader's score against the rubric
+#    Your client persists outcome.result; over many runs, score-vs-memory-
+#    revision is the curve that proves the agent is learning.
+#
+# Grader CANNOT see: chat transcript, /mnt/session/work/, MCP call results.
+# It is artifact-only by design — grade the deliverable, not the journey.
+# =============================================================================

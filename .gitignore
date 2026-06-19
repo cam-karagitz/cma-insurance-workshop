@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+.env
+.fleet.ids.toml
+.DS_Store

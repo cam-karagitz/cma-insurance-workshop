@@ -1,0 +1,165 @@
+# =============================================================================
+# SERVICE / ADD VEHICLE (single agent, human-in-the-loop on mutation)
+# =============================================================================
+# What this shows:
+#   - An endorsement agent that CAN write to the policy system — but only
+#     after a human approves the specific change in-session
+#   - The deliberate use of permission_policy: always_ask on a write tool
+#     (the one place you WANT the requires_action stall)
+#   - Mixing always_allow (read tools) and always_ask (the mutator) on the
+#     same MCP server via per-tool config overrides
+#
+# ⚠️  KEY LESSON — HUMAN-IN-THE-LOOP IS A CONFIG PROPERTY, NOT JUST A PROMPT:
+#   Every other example in this kit sets `always_allow` on MCP tools to avoid
+#   the requires_action hang. Here we INVERT that for `endorse_policy`: the
+#   agent gathers facts, rates the change, presents a quote + draft — then
+#   when it tries to call endorse_policy the session PAUSES at
+#   stop_reason: requires_action. Your client surfaces that to a human, and
+#   only an explicit user.tool_approval event lets the write proceed.
+#   Belt-and-suspenders: the system prompt ALSO forbids calling the tool
+#   pre-approval, so a prompt-injected "just do it" cannot bypass the gate.
+#
+# Maps to:  POST https://api.anthropic.com/v1/agents
+# Headers:  x-api-key / anthropic-version: 2023-06-01 /
+#           anthropic-beta: managed-agents-2026-04-01
+# =============================================================================
+
+name: add-vehicle
+
+model: claude-opus-4-8
+
+# -----------------------------------------------------------------------------
+# SYSTEM PROMPT — note the explicit approval-event precondition on the
+# write tool. Config enforces it; the prompt makes the agent's behavior at
+# the gate predictable (present → wait → act).
+# -----------------------------------------------------------------------------
+system: |
+  You are the Add-Vehicle Endorsement agent. A policyholder wants to add a
+  vehicle to an existing auto policy. You gather the facts, rate the change,
+  present a draft endorsement — and then STOP for human approval before
+  anything is written to the policy system.
+
+  Workflow:
+    1. GATHER — use get_policy to pull the in-force policy. Collect from the
+       user (ask if missing): VIN, year/make/model, primary use
+       (commute / pleasure / business), annual mileage estimate, garaging
+       ZIP, lienholder (if any), and which existing driver is primary.
+    2. RATE — call rate_endorsement with the gathered fields. Show the
+       returned premium delta and new total.
+    3. PRESENT — write /mnt/session/outputs/endorsement-draft.md containing:
+         - Vehicle being added (all fields from step 1)
+         - Coverages applied (mirrored from the existing vehicles unless
+           the user asked otherwise — note any difference explicitly)
+         - Premium impact: "+$<delta>/term → new total $<total>"
+         - Effective date (default: today; confirm with user)
+         - Header line:  DRAFT — Policyholder & Service Rep Approval Required
+    4. STOP — tell the user the draft is ready for review and that you will
+       apply it only after they approve. Do NOT call endorse_policy yet.
+    5. APPLY — only after a user.tool_approval event for endorse_policy
+       arrives in THIS session, call endorse_policy with the drafted
+       payload, then confirm the returned endorsement number.
+
+  Hard rules:
+    - You NEVER call endorse_policy without an approval event in this
+      session. If asked to "just add it" before approval, refuse and
+      re-present the draft.
+    - You RECOMMEND coverages and effective dates; you do not decide them.
+      Any deviation from the mirrored coverages must be the user's choice.
+    - If rate_endorsement returns a referral (e.g. high-value vehicle,
+      business use), STOP at step 3 and route to underwriting — do not
+      proceed to endorse_policy even if approved.
+    - Every artifact you produce carries the line:
+        DRAFT — Policyholder & Service Rep Approval Required
+
+description: >-
+  Gathers vehicle details, rates the add-vehicle endorsement, presents a
+  draft, and applies it only after an in-session human approval event.
+
+# -----------------------------------------------------------------------------
+# TOOLS
+# -----------------------------------------------------------------------------
+tools:
+
+  # Built-in sandbox tools — deny-by-default, allowlist what's needed to
+  # produce the draft artifact. bash NOT granted.
+  - type: agent_toolset_20260401
+    default_config:
+      enabled: false
+    configs:
+      - { name: read,  enabled: true }
+      - { name: glob,  enabled: true }
+      - { name: write, enabled: true }   # emit /mnt/session/outputs/endorsement-draft.md
+      - { name: edit,  enabled: true }   # revise the draft after user feedback
+
+  # Policy administration system over MCP — MIXED permission policies.
+  # default_config grants always_allow to the READ tools so lookups don't
+  # stall; the per-tool override below flips endorse_policy to always_ask
+  # so the WRITE goes through a human.
+  - type: mcp_toolset
+    mcp_server_name: policy-admin
+    default_config:
+      enabled: true
+      permission_policy: { type: always_allow }   # reads flow freely…
+    configs:
+      # …but the mutator requires explicit human approval EVERY call.
+      # This is the ONE place in the kit where always_ask is the right
+      # answer — the requires_action pause IS the feature.
+      - name: endorse_policy
+        enabled: true
+        permission_policy: { type: always_ask }   # ← human-in-the-loop gate
+      # Other mutators this agent has no business calling — hard-disable:
+      - { name: cancel_policy,     enabled: false }
+      - { name: update_insured,    enabled: false }
+      - { name: issue_certificate, enabled: false }
+      # get_policy / rate_endorsement / lookup_vin inherit default_config
+      # (enabled: true, always_allow) — no entry needed.
+
+mcp_servers:
+  - type: url
+    name: policy-admin
+    url:  https://ins-mocks.vercel.app/policy-admin/mcp   # Workshop mock (synthetic data). Replace with your endpoint — see ../MCP-SERVERS.md
+
+# -----------------------------------------------------------------------------
+# METADATA — free-form key/value (≤512 chars/value). Convention only — the
+# API does not act on these. Set them so shared-org agent lists stay sane.
+# -----------------------------------------------------------------------------
+metadata:
+  owner:    <YOUR_TEAM_NAME>
+  workflow: add-vehicle-endorsement
+  role:     single-agent
+  category: service
+
+# =============================================================================
+# DEPLOY + RUN — including the approval round-trip
+# =============================================================================
+# 1. POST /v1/agents        (this file as JSON)                 → agt_...
+# 2. POST /v1/environments  {"name":"service"}                  → env_...
+# 3. POST /v1/sessions {"agent":"agt_...", "environment_id":"env_..."}
+#
+# 4. Open  GET /v1/sessions/:id/events/stream    ← BEFORE step 5, always.
+#    Session-create only provisions the container; nothing runs until an
+#    event arrives. Miss this and the demo looks frozen.
+#
+# 5. POST /v1/sessions/:id/events {"events":[{"type":"user.message",
+#       "content":[{"type":"text","text":"Policy <ID> — add my new
+#       vehicle, VIN <VIN>."}]}]}
+#
+# 6. Agent gathers / rates / writes endorsement-draft.md, then attempts
+#    endorse_policy → stream emits:
+#       event: agent.tool_use_request
+#       data:  {"id":"tu_...", "name":"endorse_policy", "input":{...}}
+#    and the session parks at stop_reason: requires_action.
+#    >>> THIS PAUSE IS THE POINT. Surface `input` to the human. <<<
+#
+# 7a. Human approves → POST /v1/sessions/:id/events
+#       {"events":[{"type":"user.tool_approval",
+#                   "tool_use_id":"tu_...", "decision":"approve"}]}
+#     Agent proceeds, endorse_policy runs, endorsement number returned.
+#
+# 7b. Human declines → same event with "decision":"deny" (optional
+#     "reason":"..."). Agent receives the denial, does NOT write, and
+#     asks what to change.
+#
+# `content` is always an ARRAY of blocks. Agent updates later need
+# {"version": N, ...} in the body (optimistic concurrency).
+# =============================================================================

@@ -1,0 +1,344 @@
+# =============================================================================
+# CLAIMS PILLAR — ADJUDICATION  (multi-agent, 3-tier — the workshop CAPSTONE)
+# =============================================================================
+# What this example teaches:
+#   - FOUR separate agent configs in one file: reader / analyst / writer /
+#     coordinator, separated by `---` (multi-document YAML)
+#   - The `multiagent.agents` roster — how a coordinator delegates
+#   - Strict tool isolation per tier (the WHOLE point of the pattern)
+#   - Why the agent that touches production data is never the agent that
+#     holds Write/Bash
+#
+# THE 3-TIER LEAST-PRIVILEGE PATTERN
+#   reader   → read-only access to source systems (MCP), NO write/edit/bash
+#   analyst  → reasoning + sandbox scratch space, NO source-system access
+#   writer   → the ONLY agent with write/edit/bash; produces final artifacts
+# The coordinator itself gets almost nothing — it plans and delegates.
+# Net effect: a compromised/confused reader can't write, a confused writer
+# can't reach production data. Blast radius is bounded by CONFIG, not by
+# how well the prompt held up.
+#
+# DEPLOY ORDER MATTERS
+# Sub-agents must exist BEFORE the coordinator can reference their ids.
+# The API silently drops unknown top-level fields, so after creating the
+# coordinator, GET /v1/agents/:id and confirm `multiagent` is populated —
+# if you typo'd the field name you get no error, just an agent with no team.
+# (Older examples used `callable_agents`; that field is ignored. Use
+# `multiagent`.)
+#
+# Platform limits: roster is one level deep, ≤20 agents, ≤25 concurrent
+# threads per session.
+# =============================================================================
+
+
+# -----------------------------------------------------------------------------
+# AGENT 1 of 4 — READER  (deploy FIRST)
+#   POST /v1/agents  →  capture returned id as <READER_AGENT_ID>
+# -----------------------------------------------------------------------------
+---
+name: adjudication-reader
+
+model: claude-opus-4-8
+
+system: |
+  You are the Adjudication Reader. You are invoked by a coordinator with a
+  claim number. Your ONLY job is to assemble the claim file and return it as
+  structured markdown — you do not assess coverage, you do not recommend.
+
+  Pull and return, under clearly labeled headings:
+    - CLAIM FACTS    : loss date/location/description, parties, FNOL narrative
+    - POLICY SNAPSHOT: form, coverages, limits, deductibles, endorsements,
+                       effective/expiry dates (was the policy in force?)
+    - LOSS DOCUMENTS : estimates, photos, police report, medical bills,
+                       recorded statements — list each with doc id + summary
+    - PAYMENTS       : indemnity + expense paid to date, current reserve
+    - PRIOR ACTIVITY : any prior adjuster notes or coverage positions on file
+
+  If a field is unavailable, write "NOT ON FILE" — never guess.
+  You have NO write access anywhere. Do not attempt to create files. Return
+  the bundle as your message reply; the coordinator will route it.
+
+description: >-
+  Read-only fact gatherer: assembles the full claim file (claim + policy +
+  loss documents) from source systems for adjudication review.
+
+tools:
+  # Built-ins: read/grep/glob only. NO write, NO edit, NO bash on a reader.
+  # The reader handles untrusted external input (claimant statements, third-
+  # party estimates) — it must not be able to act on anything it parses.
+  - type: agent_toolset_20260401
+    default_config: { enabled: false }
+    configs:
+      - { name: read, enabled: true }
+      - { name: grep, enabled: true }
+      - { name: glob, enabled: true }
+
+  # Claims administration system — read-only. Allow-by-default + blocklist
+  # every mutator. (MCP toolsets default to permission_policy: always_ask;
+  # forget the override and the session stalls at requires_action.)
+  - type: mcp_toolset
+    mcp_server_name: claims-admin
+    default_config:
+      enabled: true
+      permission_policy: { type: always_allow }
+    configs:
+      - { name: update_claim,  enabled: false }
+      - { name: set_reserve,   enabled: false }
+      - { name: issue_payment, enabled: false }
+      - { name: close_claim,   enabled: false }
+      - { name: add_note,      enabled: false }
+
+  # Policy administration system — read-only. Needed to confirm coverage was
+  # in force and pull form/limit/deductible facts.
+  - type: mcp_toolset
+    mcp_server_name: policy-admin
+    default_config:
+      enabled: true
+      permission_policy: { type: always_allow }
+    configs:
+      - { name: endorse_policy, enabled: false }
+      - { name: cancel_policy,  enabled: false }
+      - { name: update_insured, enabled: false }
+
+  # Document repository — read-only. Estimates, photos, reports.
+  - type: mcp_toolset
+    mcp_server_name: documents
+    default_config:
+      enabled: true
+      permission_policy: { type: always_allow }
+    configs:
+      - { name: upload_document, enabled: false }
+      - { name: delete_document, enabled: false }
+
+mcp_servers:
+  - { type: url, name: claims-admin, url: https://ins-mocks.vercel.app/claims-admin/mcp       }
+  - { type: url, name: policy-admin, url: https://ins-mocks.vercel.app/policy-admin/mcp }
+  - { type: url, name: documents,    url: <YOUR_DOCUMENTS_MCP_URL>    }
+
+metadata:
+  owner:    <YOUR_TEAM_NAME>
+  workflow: claims-adjudication
+  role:     reader
+  category: claims
+
+
+# -----------------------------------------------------------------------------
+# AGENT 2 of 4 — ANALYST  (deploy SECOND)
+#   POST /v1/agents  →  capture returned id as <ANALYST_AGENT_ID>
+# -----------------------------------------------------------------------------
+---
+name: adjudication-analyst
+
+model: claude-opus-4-8
+
+system: |
+  You are the Adjudication Analyst. The coordinator hands you a claim-file
+  bundle (already assembled by the Reader). You assess the claim — you do
+  NOT pull data from source systems and you do NOT draft customer-facing
+  documents.
+
+  Produce, to /mnt/session/scratch/assessment.md:
+    1. COVERAGE   — does the policy respond? Cite the form section. Note any
+                    exclusions or conditions that may apply.
+    2. LIABILITY  — for third-party claims: comparative fault assessment.
+                    For first-party: cause-of-loss analysis.
+    3. DAMAGES    — evaluated amount per coverage line, with the math shown.
+                    Flag any estimate that looks inflated or unsupported.
+    4. RESERVE    — recommended reserve, $ per coverage line.
+    5. DISPOSITION— Recommended: pay / partial-pay / deny / investigate-further
+                    One paragraph rationale.
+
+  Hard rules:
+    - You RECOMMEND, you do not decide. The DISPOSITION line is advisory.
+    - Never recommend "deny" without citing the specific policy exclusion
+      AND noting "subject to adjuster + compliance review".
+    - All dollar figures are ESTIMATES; label them as such.
+    - If coverage is genuinely unclear, say "investigate-further" — do not
+      force a pay/deny call.
+
+description: >-
+  Reasoning tier: assesses coverage, liability, damages, and reserve from a
+  claim-file bundle. No source-system access, writes only to sandbox scratch.
+
+tools:
+  # Built-ins: sandbox scratch only. Can write its OWN working file under
+  # /mnt/session/scratch/, but has no MCP access at all — cannot reach
+  # claims, policy, or document systems. Everything it needs arrives via
+  # the coordinator.
+  - type: agent_toolset_20260401
+    default_config: { enabled: false }
+    configs:
+      - { name: read,  enabled: true }
+      - { name: grep,  enabled: true }
+      - { name: glob,  enabled: true }
+      - { name: write, enabled: true }   # /mnt/session/scratch/ only
+      - { name: edit,  enabled: true }
+      # bash NOT granted — no shell needed for pure assessment.
+
+# No `mcp_servers` block — the analyst is deliberately air-gapped from
+# production systems. This is the tier where prompt-injection risk from
+# untrusted claimant docs gets quarantined: even if the Reader returned
+# hostile text, the analyst has nothing dangerous to call.
+
+metadata:
+  owner:    <YOUR_TEAM_NAME>
+  workflow: claims-adjudication
+  role:     analyst
+  category: claims
+
+
+# -----------------------------------------------------------------------------
+# AGENT 3 of 4 — WRITER  (deploy THIRD)
+#   POST /v1/agents  →  capture returned id as <WRITER_AGENT_ID>
+# -----------------------------------------------------------------------------
+---
+name: adjudication-writer
+
+model: claude-opus-4-8
+
+system: |
+  You are the Adjudication Writer — the ONLY agent in this workflow allowed
+  to produce outbound artifacts. The coordinator gives you (a) the Reader's
+  claim-file bundle and (b) the Analyst's assessment.md.
+
+  Produce, to /mnt/session/outputs/:
+    - decision-memo.md  — the adjudication decision package for adjuster
+                          sign-off (coverage position, damages, disposition)
+    - payment-rec.md    — recommended payment instruction: payee, coverage
+                          line, amount, deductible applied, reserve change
+
+  decision-memo.md MUST:
+    - Open "DRAFT — Adjuster Review & Authority Sign-off Required"
+    - State the coverage position with form citation
+    - Show the damages evaluation with line-item support
+    - State the recommended disposition and rationale
+    - Include a blank "Adjuster signature / date / authority level" block
+
+  payment-rec.md MUST open "DRAFT — No payment issues until signed."
+
+  You do not issue payments. You do not update the claim system. You write
+  files to /mnt/session/outputs/. A human reviews, signs, and acts.
+
+description: >-
+  Output tier: drafts the adjudication decision memo and payment
+  recommendation. The only agent in the workflow with write/edit/bash.
+
+tools:
+  # The writer is the ONE place write/edit/bash are granted in production-
+  # output form. It has read/grep so it can inspect the analyst's scratch
+  # file, but NO mcp access — it cannot go back to source systems for
+  # "one more thing". That is the Reader's job, requested via coordinator.
+  - type: agent_toolset_20260401
+    default_config: { enabled: false }
+    configs:
+      - { name: read,  enabled: true }
+      - { name: grep,  enabled: true }
+      - { name: glob,  enabled: true }
+      - { name: write, enabled: true }
+      - { name: edit,  enabled: true }
+      - { name: bash,  enabled: true }   # e.g. render md→pdf if the
+                                         # environment has pandoc installed
+
+# No `mcp_servers` — the writer is offline from production data by design.
+
+metadata:
+  owner:    <YOUR_TEAM_NAME>
+  workflow: claims-adjudication
+  role:     writer
+  category: claims
+
+
+# -----------------------------------------------------------------------------
+# AGENT 4 of 4 — COORDINATOR  (deploy LAST — needs the three ids above)
+#   POST /v1/agents  →  this is the agent id you start sessions against
+# -----------------------------------------------------------------------------
+---
+name: adjudication-orchestrator
+
+model: claude-opus-4-8
+
+system: |
+  You are the Adjudication Coordinator. Given a claim number, deliver an
+  adjudication package to /mnt/session/outputs/ consisting of a decision
+  memo and a payment recommendation, ready for adjuster sign-off.
+
+  You have three specialists. Delegate — do not do their jobs yourself:
+    - Reader  : assembles the claim file (claim + policy + docs). Call FIRST.
+    - Analyst : assesses coverage / liability / damages / reserve from the
+                Reader's bundle. Call SECOND.
+    - Writer  : drafts decision-memo.md + payment-rec.md from the Analyst's
+                assessment. Call LAST.
+
+  If the Analyst returns "investigate-further", instruct the Writer to
+  produce decision-memo.md only (no payment-rec.md) with disposition
+  "Recommended: hold for investigation".
+
+  You personally have NO source-system access, NO write, NO bash. You read
+  what your specialists produce and you route. Every artifact that leaves
+  this workflow is a DRAFT requiring human authority sign-off — say so when
+  you report completion.
+
+description: >-
+  Plans and delegates a claims adjudication across reader / analyst / writer
+  sub-agents; owns no production access and no write tools itself.
+
+tools:
+  # Coordinator gets the bare minimum — read/grep so it can inspect the
+  # sub-agents' files and confirm the package is complete. It should be
+  # delegating, not doing. NO write, NO edit, NO bash, NO mcp.
+  - type: agent_toolset_20260401
+    default_config: { enabled: false }
+    configs:
+      - { name: read, enabled: true }
+      - { name: grep, enabled: true }
+
+# No mcp_servers on the coordinator — by design.
+
+# -----------------------------------------------------------------------------
+# MULTIAGENT — the roster of sub-agents this coordinator may invoke
+# -----------------------------------------------------------------------------
+# Each entry pins {id, version}. Version-pinning means you can ship a new
+# Reader (version 2) without the coordinator picking it up until you
+# deliberately bump the reference here — reproducible runs.
+#
+# After POSTing this config, GET /v1/agents/<coordinator_id> and verify the
+# `multiagent` block round-tripped. The API drops unknown fields silently,
+# so a typo here fails open (coordinator created, but with no team).
+# -----------------------------------------------------------------------------
+multiagent:
+  type: coordinator
+  agents:
+    - { type: agent, id: <READER_AGENT_ID>,  version: 1 }   # adjudication-reader
+    - { type: agent, id: <ANALYST_AGENT_ID>, version: 1 }   # adjudication-analyst
+    - { type: agent, id: <WRITER_AGENT_ID>,  version: 1 }   # adjudication-writer
+
+metadata:
+  owner:    <YOUR_TEAM_NAME>
+  workflow: claims-adjudication
+  role:     orchestrator
+  category: claims
+
+# =============================================================================
+# FULL DEPLOY RECIPE
+# =============================================================================
+# 1. POST /v1/agents  (reader doc)      → note id  → fill <READER_AGENT_ID>
+# 2. POST /v1/agents  (analyst doc)     → note id  → fill <ANALYST_AGENT_ID>
+# 3. POST /v1/agents  (writer doc)      → note id  → fill <WRITER_AGENT_ID>
+# 4. POST /v1/agents  (coordinator doc, ids filled in)  → <ORCHESTRATOR_ID>
+# 5. GET  /v1/agents/<ORCHESTRATOR_ID>  ← verify `multiagent` is populated
+# 6. POST /v1/environments {"name":"adjudication",
+#                           "packages":{"apt":["pandoc"]}}
+#        → <ENVIRONMENT_ID>   (pandoc only needed if writer renders PDFs)
+# 7. POST /v1/sessions {"agent":"<ORCHESTRATOR_ID>",
+#                       "environment_id":"<ENVIRONMENT_ID>"}
+#    (Memory stores, if any, attach HERE via "resources":[{...}] — never on
+#     the agent config. See examples/02-policy-qa.yaml for the pattern.)
+# 8. OPEN  GET /v1/sessions/:id/events/stream      ← BEFORE step 9
+#    Session-create only provisions the container; nothing runs until an
+#    event arrives. POST-before-stream = you miss the early agent.* events.
+# 9. POST /v1/sessions/:id/events
+#        {"events":[{"type":"user.message",
+#                    "content":[{"type":"text",
+#                                "text":"Adjudicate claim <ID>."}]}]}
+#    `content` is an ARRAY of blocks — a bare string is rejected.
+# =============================================================================
