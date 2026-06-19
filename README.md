@@ -71,8 +71,8 @@ The examples ship pointing at **hosted mock MCP servers** (synthetic data) so th
 | Lab | Example | Teaches |
 |---|---|---|
 | 1 | `claims/fnol-triage` | first agent — config, one MCP, the gotchas |
-| 2 | `claims/siu-referral` | memory store — learns fraud patterns across sessions |
-| 3 | `claims/adjudication` | multi-agent — 3-tier reader/analyst/writer |
+| 2 | `claims/siu-referral` | **memory** (learns fraud patterns) + **human-in-loop** (`refer_to_siu` parks at `requires_action`) |
+| 3 | `claims/adjudication` + `adjudication-rubric.md` | **multi-agent** 3-tier + **outcomes** (rubric-graded decision memo) |
 
 ### Service & Sales track
 

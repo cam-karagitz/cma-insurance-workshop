@@ -4,9 +4,13 @@
 # What this example teaches:
 #   - A claims agent that screens for Special Investigations Unit indicators
 #     (staged-loss patterns, claimant-history flags, narrative inconsistencies)
-#   - A persistent MEMORY STORE the agent reads at the start of every session
-#     and refines over time with fraud-pattern heuristics it has seen hold up
-#   - Why memory attaches at SESSION-create (resources[]), never on the agent
+#   - MEMORY STORE — the agent reads fraud-pattern heuristics at session start
+#     and refines them over time; attaches at SESSION-create (resources[]),
+#     never on the agent
+#   - HUMAN-IN-THE-LOOP WRITE — `refer_to_siu` is the one MCP tool the agent
+#     MAY call, but it carries `permission_policy: always_ask` so the session
+#     PARKS at `requires_action` until a human approves. The stall is the
+#     feature: nothing reaches SIU's queue without a person saying yes.
 #
 # THE GOVERNANCE STORY — why a claims leader should be comfortable with this:
 #   Memory-store writes are VERSIONED, ATTRIBUTED to the session that wrote
@@ -56,6 +60,9 @@ system: |
   Hard rules:
     - You RECOMMEND, you do not decide. A REFER recommendation is a request
       for SIU triage — it is not a fraud finding and you must say so.
+    - If your recommendation is REFER, you may call refer_to_siu — but ONLY
+      after you have written siu-screen.md, and ONLY once. The call will park
+      for human approval; do not retry or work around the pause.
     - Never use protected-class attributes (or proxies for them) as indicators.
     - Never write claimant PII into the memory store — patterns only.
     - End siu-screen.md with the line:
@@ -94,11 +101,18 @@ tools:
       enabled: true
       permission_policy: { type: always_allow }
     configs:
-      - { name: update_claim,  enabled: false }   # blocklist every mutator
+      - { name: update_claim,  enabled: false }   # blocklist mutators outright
       - { name: set_reserve,   enabled: false }
       - { name: add_note,      enabled: false }
-      - { name: refer_to_siu,  enabled: false }   # the AGENT does not refer —
-      - { name: close_claim,   enabled: false }   # a human acts on the draft
+      - { name: close_claim,   enabled: false }
+      # refer_to_siu is the ONE write the agent may attempt — but it parks for
+      # human approval. Per-tool permission_policy override; everything else on
+      # this server inherits always_allow from default_config above.
+      - { name: refer_to_siu,  permission_policy: { type: always_ask } }
+      # On a REFER run the SSE stream emits `session.requires_action` with the
+      # pending refer_to_siu call. Your client surfaces it; a human approves or
+      # denies via `POST …/events {events:[{type:"user.tool_approval", …}]}`.
+      # run.py prints the pending action and stops — approve in Console.
 
   # Policy administration — read-only. Needed for inception/endorsement/lapse
   # dates so POLICY-TIMING indicators can be assessed.

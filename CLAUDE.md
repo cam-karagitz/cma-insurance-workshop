@@ -64,8 +64,8 @@ metadata: { owner: <you>, workflow: <name>, role: Orchestrator|Reader|Writer }  
 1. **Match the user's ask to a pillar (claims / service / sales) first, then the closest example.** Copy it; don't write configs from scratch.
    - **claims/**
      - `fnol-triage.yaml` — teaches: first agent — single agent, one MCP, deny-by-default toolset, the gotchas
-     - `siu-referral.yaml` — teaches: memory store — learns fraud patterns across sessions
-     - `adjudication.yaml` — teaches: multi-agent — 3-tier orchestration (reader / analyst / writer)
+     - `siu-referral.yaml` — teaches: memory store (learns fraud patterns) + human-in-loop write (`refer_to_siu` → `requires_action`)
+     - `adjudication.yaml` + `adjudication-rubric.md` — teaches: multi-agent 3-tier + outcomes rubric (self-graded decision memo)
    - **service/**
      - `coverage-explainer.yaml` — teaches: first agent + memory store attached at session-create via `resources[]`
      - `add-vehicle.yaml` — teaches: human-in-the-loop write — `always_ask` → handle `requires_action`
