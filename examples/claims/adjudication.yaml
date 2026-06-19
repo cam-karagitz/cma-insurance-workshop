@@ -101,19 +101,20 @@ tools:
       - { name: update_insured, enabled: false }
 
   # Document repository — read-only. Estimates, photos, reports.
-  - type: mcp_toolset
-    mcp_server_name: documents
-    default_config:
-      enabled: true
-      permission_policy: { type: always_allow }
-    configs:
-      - { name: upload_document, enabled: false }
-      - { name: delete_document, enabled: false }
+  # No workshop mock exists for `documents`; for the lab we use claims-admin's
+  # get_loss_details as a proxy (see MCP-SERVERS.md). When you have a real
+  # document MCP, ADD it here and to mcp_servers below — uncomment:
+  # - type: mcp_toolset
+  #   mcp_server_name: documents
+  #   default_config: { enabled: true, permission_policy: { type: always_allow } }
+  #   configs:
+  #     - { name: upload_document, enabled: false }
+  #     - { name: delete_document, enabled: false }
 
 mcp_servers:
-  - { type: url, name: claims-admin, url: https://ins-mocks.vercel.app/claims-admin/mcp       }
+  - { type: url, name: claims-admin, url: https://ins-mocks.vercel.app/claims-admin/mcp }
   - { type: url, name: policy-admin, url: https://ins-mocks.vercel.app/policy-admin/mcp }
-  - { type: url, name: documents,    url: <YOUR_DOCUMENTS_MCP_URL>    }
+  # - { type: url, name: documents,  url: https://YOUR-DOMAIN/documents/mcp }   # add your real one
 
 metadata:
   owner:    <YOUR_TEAM_NAME>
