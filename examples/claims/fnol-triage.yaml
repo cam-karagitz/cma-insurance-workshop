@@ -103,9 +103,11 @@ tools:
       # Then BLOCKLIST individual write tools for least-privilege.
       # Triage is read-only against the claims system — it should never
       # mutate a claim record. List every write-capable tool your MCP
-      # server exposes and disable it:
-      - { name: update_claim,    enabled: false }
+      # server exposes and disable it (any tool NOT named here is allowed):
+      - { name: file_fnol,       enabled: false }
+      - { name: update_reserve,  enabled: false }
       - { name: assign_adjuster, enabled: false }
+      - { name: update_claim,    enabled: false }
       - { name: close_claim,     enabled: false }
 
 # -----------------------------------------------------------------------------
@@ -123,12 +125,27 @@ mcp_servers:
 
 # -----------------------------------------------------------------------------
 # METADATA — free-form string key/value pairs
+# ENVIRONMENT (optional) — WHERE the agent runs, separate from WHAT it is.
+# Create once, reuse across agents/sessions. deploy.py POSTs this block to
+# /v1/environments if present; otherwise run.py creates a default.
+# Uncomment to restrict the sandbox's network egress to ONLY your MCP hosts —
+# even a prompt-injected agent can't reach an arbitrary host if the network
+# layer blocks it. A real control, not a prompt-level hope.
 # -----------------------------------------------------------------------------
-# The API stores these opaquely (it does not act on them). Hard limit: 512
-# chars per value. The {owner, workflow, role, category} schema below is a
-# CONVENTION ONLY — use it so your own dashboards / scripts can filter and
-# group agents. A shared workspace fills up fast and unlabeled agents become
-# impossible to manage.
+# environment:
+#   name: claims-restricted
+#   config:
+#     type: cloud
+#     networking:
+#       type: limited
+#       allowed_hosts:
+#         - ins-mocks.vercel.app                 # workshop mock
+#         - <your-claimcenter-mcp-host>          # your real MCP, when you swap
+
+# -----------------------------------------------------------------------------
+# METADATA — convention only. The API stores these opaquely (≤512 chars/value).
+# Use {owner, workflow, role, category} so your own dashboards can filter and
+# group agents — a shared workspace fills up fast.
 # -----------------------------------------------------------------------------
 metadata:
   owner:    <YOUR_TEAM_NAME>            # e.g. claims-platform

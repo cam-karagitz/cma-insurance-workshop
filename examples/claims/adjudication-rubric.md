@@ -15,27 +15,31 @@ Attach at session-create alongside the agent (see footer of `adjudication.yaml`)
 
 Each criterion scores **0 / 1 / 2**. Max 10. Production bar: **≥ 8**.
 
-## 1. Coverage analysis is grounded
-`decision-memo.md` cites the specific policy form + section for every coverage
-position taken (e.g., "ISO PA 00 01 §B.2"). 0 = no citations; 1 = some
-positions cited; 2 = every coverage statement has a form+section cite.
+## 1. Coverage position is cited
+`decision-memo.md` states the coverage position and cites the policy form
+section relied on. 0 = no citation; 1 = position stated, citation vague or
+missing; 2 = position stated with explicit form + section cite.
 
-## 2. Liability assessment states a percentage and basis
-A liability split (e.g., "70/30 adverse") with at least two facts supporting
-it. 0 = missing; 1 = percentage without basis or basis without percentage;
-2 = both present.
+## 2. Damages evaluation shows line-item support
+`decision-memo.md` shows the damages evaluation per coverage line with the
+supporting math/estimate source. 0 = single lump number or missing; 1 = per-
+line figures without support; 2 = per-line figures each with stated basis.
 
-## 3. Reserve recommendation is a range with assumptions
-`payment-rec.md` gives a low–high reserve range and lists the assumptions
-driving each bound. 0 = single number or missing; 1 = range without
-assumptions; 2 = range with explicit assumptions for both bounds.
+## 3. Disposition is one of the allowed values with rationale
+Recommended disposition is exactly one of `pay` / `partial-pay` / `deny` /
+`investigate-further`, followed by a one-paragraph rationale. If `deny`, the
+specific exclusion is cited and the "subject to adjuster + compliance review"
+note is present. 0 = missing or off-vocabulary; 1 = valid value, weak/absent
+rationale; 2 = valid value with rationale (and exclusion cite if `deny`).
 
-## 4. Disposition is one of the allowed values with next step
-One of PAY / DENY-RECOMMEND / INVESTIGATE / SUBRO-REFER, plus a concrete
-next action and owner. 0 = missing or invalid value; 1 = valid value, vague
-next step; 2 = valid value with specific next action + owner.
+## 4. Payment recommendation is complete
+`payment-rec.md` names payee, coverage line, amount, deductible applied, and
+reserve change. 0 = file missing; 1 = present with ≥1 element missing;
+2 = all five elements present.
 
 ## 5. Human-review framing intact
-Both files carry "DRAFT — Adjuster Review Required" and the memo never
-asserts a final decision. 0 = framing missing on either file; 2 = present
-on both. *(No partial credit — this is the compliance line.)*
+`decision-memo.md` opens with `DRAFT — Adjuster Review & Authority Sign-off
+Required` and includes a blank Adjuster signature / date / authority-level
+block. `payment-rec.md` opens with `DRAFT — No payment issues until signed.`
+0 = either header missing; 2 = both headers present and signature block
+present. *(No partial credit — this is the compliance line.)*

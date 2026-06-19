@@ -101,10 +101,13 @@ tools:
       enabled: true
       permission_policy: { type: always_allow }
     configs:
-      - { name: update_claim,  enabled: false }   # blocklist mutators outright
-      - { name: set_reserve,   enabled: false }
-      - { name: add_note,      enabled: false }
-      - { name: close_claim,   enabled: false }
+      - { name: file_fnol,       enabled: false }   # blocklist mutators outright
+      - { name: update_reserve,  enabled: false }
+      - { name: assign_adjuster, enabled: false }
+      - { name: update_claim,    enabled: false }
+      - { name: set_reserve,     enabled: false }
+      - { name: add_note,        enabled: false }
+      - { name: close_claim,     enabled: false }
       # refer_to_siu is the ONE write the agent may attempt — but it parks for
       # human approval. Per-tool permission_policy override; everything else on
       # this server inherits always_allow from default_config above.

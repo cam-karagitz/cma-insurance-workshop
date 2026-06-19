@@ -8,10 +8,13 @@ The example YAMLs ship pointing at **hosted mock MCP servers** so they run out o
 
 | MCP `name` | Workshop mock URL | Exposes (read tools) | Write tools (blocklisted in examples) | Used by |
 |---|---|---|---|---|
-| `claims-admin` | `https://ins-mocks.vercel.app/claims-admin/mcp` | `get_claim`, `list_claims`, `get_loss_details` | `file_fnol`, `update_reserve`, `assign_adjuster` | `claims/fnol-triage`, `claims/adjudication` |
-| `policy-admin` | `https://ins-mocks.vercel.app/policy-admin/mcp` | `get_policy`, `get_coverage`, `rate_endorsement`, `lookup_vin` | `endorse_policy`, `cancel_policy`, `update_insured` | `service/*`, `claims/adjudication`, `sales/renewal-retention` |
+| `claims-admin` | `https://ins-mocks.vercel.app/claims-admin/mcp` | `get_claim`, `list_claims`, `get_loss_details` | `file_fnol`, `update_reserve`, `assign_adjuster` | `claims/fnol-triage`, `claims/siu-referral`, `claims/adjudication` |
+| `policy-admin` | `https://ins-mocks.vercel.app/policy-admin/mcp` | `get_policy`, `get_coverage`, `rate_endorsement`, `lookup_vin` | `endorse_policy`, `cancel_policy`, `update_insured` | `service/*`, `claims/*`, `sales/renewal-retention` |
+| `crm` | `https://ins-mocks.vercel.app/crm/mcp` | `get_customer`, `get_household`, `list_interactions` | `update_contact`, `log_interaction` | `service/household-review` |
 
-These two cover **4 of the 6 examples end-to-end** (`claims/fnol-triage`, `service/coverage-explainer`, `service/add-vehicle`, and `claims/adjudication` minus its `documents` server).
+These three cover **6 of the 8 examples end-to-end** — everything except `sales/quote-builder` (needs rating/VIN/MVR mocks) and the `documents` server in `claims/adjudication` (runs with 2 of 3).
+
+> ⚠️ **Blocklists are fragile.** `default_config.enabled: true` means any tool **not** named in `configs:` is allowed. Before deploying against your own MCP, list its tools and blocklist every mutator — or flip to deny-by-default (`default_config.enabled: false`) and allowlist only the reads you need. The examples blocklist the mock's known mutators; your real server will have more.
 
 > ⚠️ **Shared state**: the mocks back writes with a shared KV overlay. If multiple workshop attendees call write tools (e.g. `endorse_policy` in `service/add-vehicle`) they'll see each other's changes. For the workshop, either keep writes behind `always_ask` (the example default) or namespace by using distinct fixture IDs per attendee.
 

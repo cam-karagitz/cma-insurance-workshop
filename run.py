@@ -86,6 +86,10 @@ def send_first_message():
     })
 
 
+# Workshop simplification: 0.5s is enough on a local network. Production
+# clients should not sleep — open the stream, read until you see
+# `session.ready` (or first heartbeat), THEN POST. See /claude-api skill
+# for the lossless-reconnect pattern using `processed_at`.
 threading.Timer(0.5, send_first_message).start()
 
 with cma("GET", f"/v1/sessions/{sid}/events/stream", stream=True) as stream:

@@ -11,6 +11,7 @@ Please complete these **before** the session — the first 30 minutes assume you
 - [ ] **Python 3.10+** with `pip install pyyaml requests`
 - [ ] **Clone this repo**: `git clone https://github.com/cam-karagitz/cma-insurance-workshop && cd cma-insurance-workshop`
 - [ ] **Verify the kit**: `python deploy.py --dry-run examples/claims/fnol-triage.yaml` — should print a JSON request body, no errors
+- [ ] Confirm **outcomes** and **multiagent** are enabled on your org (separate from the managed-agents beta — ask your Anthropic contact). Labs 3+ depend on these.
 
 ## Recommended
 
