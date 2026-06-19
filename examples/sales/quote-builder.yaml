@@ -132,9 +132,9 @@ tools:
 # not in this config — never put credentials in the agent body.
 # -----------------------------------------------------------------------------
 mcp_servers:
-  - { type: url, name: vehicle-data,   url: <YOUR_VEHICLE_DATA_MCP_URL>   }  # VIN decode / symbols
-  - { type: url, name: driver-history, url: <YOUR_DRIVER_HISTORY_MCP_URL> }  # MVR + CLUE
-  - { type: url, name: rating-engine,  url: <YOUR_RATING_ENGINE_MCP_URL>  }  # pricing
+  - { type: url, name: vehicle-data,   url: https://your-mcp.example/vehicle-data/mcp   }  # ⬅ REPLACE — no workshop mock; see MCP-SERVERS.md
+  - { type: url, name: driver-history, url: https://your-mcp.example/driver-history/mcp }  # ⬅ REPLACE — no workshop mock
+  - { type: url, name: rating-engine,  url: https://your-mcp.example/rating/mcp         }  # ⬅ REPLACE — no workshop mock
 
 # -----------------------------------------------------------------------------
 # METADATA — free-form key/value (≤512 chars per value)

@@ -129,7 +129,7 @@ tools:
 
 mcp_servers:
   - { type: url, name: policy-admin, url: https://ins-mocks.vercel.app/policy-admin/mcp }
-  - { type: url, name: market-intel, url: <YOUR_MARKET_INTEL_MCP_URL> }
+  - { type: url, name: market-intel, url: https://your-mcp.example/market-intel/mcp }  # ⬅ REPLACE — no workshop mock; see MCP-SERVERS.md
 
 # -----------------------------------------------------------------------------
 # METADATA — free-form, this kit's convention only
