@@ -308,9 +308,9 @@ tools:
 multiagent:
   type: coordinator
   agents:
-    - { type: agent, id: <READER_AGENT_ID>,  version: 1 }   # adjudication-reader
-    - { type: agent, id: <ANALYST_AGENT_ID>, version: 1 }   # adjudication-analyst
-    - { type: agent, id: <WRITER_AGENT_ID>,  version: 1 }   # adjudication-writer
+    - { type: agent, id: adjudication-reader  }   # deploy.py resolves name → real id+version
+    - { type: agent, id: adjudication-analyst }
+    - { type: agent, id: adjudication-writer  }
 
 metadata:
   owner:    <YOUR_TEAM_NAME>
