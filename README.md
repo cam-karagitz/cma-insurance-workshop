@@ -54,16 +54,17 @@ The examples ship pointing at **hosted mock MCP servers** (synthetic data) so th
 
 ## Suggested learning order
 
-The examples are sequenced by **complexity, not pillar** — cross pillars to layer one new concept at a time:
+Two tracks depending on your format:
 
-| # | Example | Adds |
-|---|---|---|
-| 1 | `claims/fnol-triage` | single agent, one MCP, deny-by-default toolset |
-| 2 | `service/coverage-explainer` | memory store attached at session-create |
-| 3 | `service/add-vehicle` | human-in-the-loop write — `always_ask` → `requires_action` |
-| 4 | `sales/quote-builder` | multiple MCP servers, per-tool blocklists |
-| 5 | `sales/renewal-retention` | outcomes rubric — agent self-grades against criteria |
-| 6 | `claims/adjudication` | 3-tier multi-agent (orchestrator / readers / writer) |
+**Single session** — sequence by complexity, one new concept per lab:
+`claims/fnol-triage` → `service/coverage-explainer` → `service/add-vehicle` → `sales/quote-builder` → `sales/renewal-retention` → `claims/adjudication`
+
+**Two-day, domain-per-day** — Day 1 builds the architecture, Day 2 adds the production features:
+
+| Day | Theme | Labs | Concepts |
+|---|---|---|---|
+| **1** | Build & orchestrate | `claims/fnol-triage` → `claims/adjudication` | agent config shape · 3-tier multi-agent · least-privilege tool grants |
+| **2** | Make it production-grade | `service/coverage-explainer` → `service/add-vehicle` → `sales/quote-builder` → `sales/renewal-retention` | memory · human-in-loop writes · multi-MCP · outcomes/self-grading |
 
 ## Docs
 
