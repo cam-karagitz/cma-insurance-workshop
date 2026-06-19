@@ -30,7 +30,19 @@ python run.py --agent agt_... "Triage claim CLM-2026-0001"
 # 4. Work through your track in lab order (tables below). Copy any example as your own starting point.
 ```
 
-`deploy.py` defines the agent (one-time, versioned). `run.py` is the minimal **client** every CMA integration needs — the part *you* still own: trigger a session, stream events, handle `requires_action`. In production this becomes a webhook handler, a cron, a button in your UI; here it's 100 lines you can read top to bottom.
+## About `deploy.py` and `run.py`
+
+**These are reference implementations, not Anthropic products.** They're ~100 lines each, stdlib + `requests`, no SDK — written so you can see exactly what hits the wire. They're yours: fork them, put them in your CI, wrap them in Terraform, or throw them away and use an official path instead.
+
+| Official alternatives | When you'd use it |
+|---|---|
+| `ant beta:agents create < agent.yaml` — the Anthropic CLI | interactive use, one-off deploys |
+| Anthropic SDKs (`client.beta.agents.create(...)`) — Python, TS, C#, Go, Java, PHP, Ruby | when deploy is part of a larger app |
+| `/claude-api managed-agents-onboard` in Claude Code | scaffolds the SDK code + run loop in your language |
+
+**Why these scripts exist anyway:** `deploy.py` handles the multi-doc YAML → subagents-first → roster-auto-wire pattern (the multi-agent capstone) that the CLI and SDKs don't do for you, and `--dry-run` prints the exact JSON body — useful for learning the API shape and for diffing what you wrote against what gets sent. `run.py` is the minimal session client every CMA integration needs — the part *you* still own: trigger a session, stream events, handle `requires_action`. In production that becomes a webhook handler, a cron, a button in your UI.
+
+**What they deliberately don't do:** staging vs prod, GitOps, diff-before-promote, rollback. Agents are versioned resources — that's the primitive. Your release process is yours to build on top. The API is the contract; these scripts are one way to call it.
 
 ## Directory map
 
