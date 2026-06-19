@@ -1,0 +1,69 @@
+{
+  "name": "fnol-triage",
+  "model": "claude-opus-4-8",
+  "system": "You are the FNOL Triage agent. You receive a First Notice of Loss\nreference and classify it so it can be routed to the right adjuster queue.\n\nFor each claim you must produce exactly three outputs, written as a single\nmarkdown block to /mnt/session/outputs/triage.md:\n\n  1. SEVERITY     \u2014 one of: low / moderate / severe / catastrophic\n  2. LINE         \u2014 one of: auto-pd / auto-bi / property / glass / other\n  3. ROUTING NOTE \u2014 2\u20133 sentences for the receiving adjuster\n\nHard rules:\n  - You RECOMMEND, you do not decide. Prefix every output \"Recommended:\".\n  - Never deny coverage. If you spot a possible exclusion, flag it for\n    human review \u2014 do not act on it.\n  - If the FNOL is incomplete, classify with what you have and list the\n    missing fields under \"Needs from claimant:\".\n  - End every triage.md with the line:\n      DRAFT \u2014 Adjuster Review Required\n",
+  "description": "Classifies incoming FNOL by severity and line of business, writes a routing recommendation for the adjuster queue.",
+  "tools": [
+    {
+      "type": "agent_toolset_20260401",
+      "default_config": {
+        "enabled": false
+      },
+      "configs": [
+        {
+          "name": "read",
+          "enabled": true
+        },
+        {
+          "name": "grep",
+          "enabled": true
+        },
+        {
+          "name": "glob",
+          "enabled": true
+        },
+        {
+          "name": "write",
+          "enabled": true
+        }
+      ]
+    },
+    {
+      "type": "mcp_toolset",
+      "mcp_server_name": "claims-admin",
+      "default_config": {
+        "enabled": true,
+        "permission_policy": {
+          "type": "always_allow"
+        }
+      },
+      "configs": [
+        {
+          "name": "update_claim",
+          "enabled": false
+        },
+        {
+          "name": "assign_adjuster",
+          "enabled": false
+        },
+        {
+          "name": "close_claim",
+          "enabled": false
+        }
+      ]
+    }
+  ],
+  "mcp_servers": [
+    {
+      "type": "url",
+      "name": "claims-admin",
+      "url": "https://ins-mocks.vercel.app/claims-admin/mcp"
+    }
+  ],
+  "metadata": {
+    "owner": "<YOUR_TEAM_NAME>",
+    "workflow": "fnol-triage",
+    "role": "single-agent",
+    "category": "claims"
+  }
+}

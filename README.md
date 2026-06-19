@@ -52,6 +52,20 @@ workshop-kit/
 
 The examples ship pointing at **hosted mock MCP servers** (synthetic data) so they run out of the box. See [`MCP-SERVERS.md`](MCP-SERVERS.md) to swap in your own — it's a one-line `url:` edit per server.
 
+## YAML or JSON?
+
+**Either.** The CMA API speaks JSON; YAML is just an authoring convenience (comments, multiline `system:` prompts, multi-doc fleets). `deploy.py` accepts both — `yaml.safe_load` parses JSON since JSON ⊂ YAML.
+
+`examples/claims/fnol-triage.yaml` and `examples/claims/fnol-triage.json` are the **same agent in both syntaxes**. Prove it:
+
+```bash
+diff <(python deploy.py --dry-run examples/claims/fnol-triage.yaml) \
+     <(python deploy.py --dry-run examples/claims/fnol-triage.json)
+# (no output = identical request bodies)
+```
+
+To get JSON for any YAML example: `python deploy.py --dry-run <file.yaml>` prints the exact JSON that hits the wire — copy it into a `.json` file or straight into curl / your SDK of choice.
+
 ## Suggested learning order
 
 Two tracks depending on your format:
