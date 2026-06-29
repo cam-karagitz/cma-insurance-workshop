@@ -24,6 +24,7 @@ Please complete these **before** the session — the first 30 minutes assume you
   - `.venv/bin/python3 -c "import yaml, requests; print('deps OK')"` — must print `deps OK`. This is the one that bites people: `deploy.py --dry-run` works WITHOUT `requests` (it never touches the network), so everything looks fine right up until your first REAL deploy dies with `ModuleNotFoundError`. Two seconds here saves your first lab.
   - `.venv/bin/python3 deploy.py --dry-run examples/claims/fnol-triage.yaml` — prints a JSON request body, no errors (offline; proves the tooling works)
   - `.venv/bin/python3 validate.py` — must end with `PREFLIGHT CLEAN`. This one calls the **live** hosted mock servers and asserts every tool the examples grant actually exists there, so it doubles as proof that your network can reach the mocks (and it warns you if `requests` is missing).
+- [ ] **Open this repo in Claude Code and type `/`** — confirm **`new-agent`** appears in the skill list. It ships *inside* this repo (`.claude/skills/new-agent/`, real files) and Claude Code discovers it automatically: **there is nothing to install and you do not need a zip.** (Want `/new-agent` in your *other* repos too? `cp -R .claude/skills/new-agent ~/.claude/skills/` — that's it.)
 - [ ] Confirm **outcomes** and **multiagent** are enabled on your org (separate from the managed-agents beta — ask your Anthropic contact). Labs 3+ depend on these.
 
 ## Recommended
