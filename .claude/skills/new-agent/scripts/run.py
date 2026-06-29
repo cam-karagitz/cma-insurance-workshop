@@ -412,6 +412,10 @@ threading.Timer(0.5, send_first_message).start()
 # == "ask" goes in here; the session.status_idle whose stop_reason names those
 # ids drains it (one user.tool_confirmation per id).
 PENDING = {}
+# A --rubric run is not over when the AGENT goes idle: the grader runs AFTER
+# that, on the same session, and its verdict arrives on this same stream. This
+# flag is how the status_idle handler knows whether to keep listening.
+GRADED = {"done": False}
 
 with cma("GET", f"/v1/sessions/{sid}/events/stream", stream=True) as stream:
     for line in stream.iter_lines(decode_unicode=True):
@@ -443,11 +447,28 @@ with cma("GET", f"/v1/sessions/{sid}/events/stream", stream=True) as stream:
         elif et in ("agent.tool_result", "agent.mcp_tool_result"):
             print(f"  ← ({len(str(ev.get('content','')))} chars)")
             ui_feed("tool_result", chars=len(str(ev.get("content", ""))))
+        elif et == "span.outcome_evaluation_start":
+            # --rubric: the agent finished and the GRADER has started. It reads
+            # ONLY /mnt/session/outputs/** — never the chat, never the tool
+            # results — and scores it against your rubric. (It can even call the
+            # same read tools to fact-check what the agent wrote.)
+            print(f"\n\n🧑‍⚖️  GRADER started (iteration {int(ev.get('iteration', 0)) + 1}) — it sees only /mnt/session/outputs/ …")
+            ui_feed("status", text="grader running — it reads only /mnt/session/outputs/")
+        elif et == "span.outcome_evaluation_end":
+            # THE VERDICT RIDES ON THIS EVENT (`explanation`, plus pass/score
+            # fields when present). On a straightforward pass there is NO
+            # separate `outcome.result` event — do not wait for one. This is the
+            # moment the rubric stops being a document and becomes a grade: edit
+            # one criterion, re-run the same instruction, and watch it change.
+            GRADED["done"] = True
+            print("\n\n📊 OUTCOME — the grader's verdict:")
+            print(json.dumps({k: v for k, v in ev.items()
+                              if k not in ("id", "type", "processed_at", "outcome_id")}, indent=2)[:3000])
+            ui_feed("status", text="grader finished — verdict received")
         elif et == "outcome.result":
-            # The grader's verdict on a --rubric run. This is the moment the
-            # rubric stops being a document and becomes a score: edit the rubric,
-            # re-run the same instruction, and watch this number move.
-            print("\n\n📊 OUTCOME — the grader's score for this run:")
+            # Some flows also emit an explicit outcome.result; print it too.
+            GRADED["done"] = True
+            print("\n\n📊 OUTCOME — outcome.result:")
             print(json.dumps(ev.get("result", ev), indent=2)[:2000])
         elif et == "session.status_idle":
             # status_idle is NOT always the end — its stop_reason says why the
@@ -512,6 +533,14 @@ with cma("GET", f"/v1/sessions/{sid}/events/stream", stream=True) as stream:
                     PENDING.pop(tu, None)
                 # Deliberately NO `break`: the session was only paused, and the
                 # agent now resumes on this SAME stream — keep reading it.
+                continue
+            # A GRADED (--rubric) run goes idle TWICE: once when the AGENT
+            # finishes (the grader has not even started yet) and once after the
+            # EVALUATION completes. Exiting at the first idle misses the entire
+            # grade — the one thing a --rubric run exists to produce.
+            if args.rubric and not GRADED["done"]:
+                print("\n\n✅ the agent is idle — holding the stream open for the GRADER…")
+                ui_feed("status", text="agent idle — waiting for the grader's verdict")
                 continue
             why = f" ({sr['type']})" if sr.get("type") else ""
             print(f"\n\n✅ idle{why} — outputs (if any) at /mnt/session/outputs/ in Console")
