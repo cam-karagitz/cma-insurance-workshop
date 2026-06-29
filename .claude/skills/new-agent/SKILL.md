@@ -220,9 +220,10 @@ directory.
    Whichever they pick: **never write the key into any file, never put it in
    the YAML, and never repeat it back to them.**
    Then deploy: `python3 ${CLAUDE_SKILL_DIR}/scripts/deploy.py <the yaml>` →
-   `agt_…`.
+   it prints the new agent's id (`agent_…` — that exact id is what every later
+   command takes).
 5. **Run it.**
-   `python3 ${CLAUDE_SKILL_DIR}/scripts/run.py --agent agt_… --ui "<a real
+   `python3 ${CLAUDE_SKILL_DIR}/scripts/run.py --agent agent_… --ui "<a real
    first instruction>"`, adding `--readonly-store` / `--memory-store` /
    `--rubric <the rubric file>` per Step 1. If a write is gated, tell the user
    what is about to happen *before* it does: the agent will park, and the

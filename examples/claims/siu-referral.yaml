@@ -157,12 +157,12 @@ metadata:
 # DEPLOY + RUN — memory attaches at SESSION via resources[], NOT on the agent
 # =============================================================================
 # 1. POST /v1/memory_stores {"name":"siu-patterns"}             → memstore_...
-# 2. POST /v1/agents        (this file as JSON)                 → agt_...
+# 2. POST /v1/agents        (this file as JSON)                 → agent_...
 # 3. POST /v1/environments  {"name":"claims"}                   → env_...
 #
 # 4. POST /v1/sessions  ← MEMORY MOUNTS HERE:
 #    {
-#      "agent": "agt_...",
+#      "agent": "agent_...",
 #      "environment_id": "env_...",
 #      "resources": [{
 #        "type": "memory_store",

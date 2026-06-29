@@ -15,7 +15,7 @@ Attach it with one flag — `run.py` sends it as the kickoff (memory stores stil
 attach via `resources[]`; the rubric does not):
 
 ```bash
-python3 run.py --agent agt_… --readonly-store memstore_<THE MANUAL> \
+python3 run.py --agent agent_… --readonly-store memstore_<THE MANUAL> \
   --rubric examples/claims/next-best-action-rubric.md --ui \
   "Review the open claim queue and give me next best actions."
 ```

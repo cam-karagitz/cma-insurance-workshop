@@ -13,7 +13,7 @@
 Attach it with one flag — `run.py` sends it as the kickoff:
 
 ```bash
-python3 run.py --agent agt_… --rubric examples/claims/coverage-determination-rubric.md \
+python3 run.py --agent agent_… --rubric examples/claims/coverage-determination-rubric.md \
   "Determine coverage for claim CLM-2026-0419."
 ```
 

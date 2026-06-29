@@ -32,7 +32,7 @@ mcp_servers:
   - { type: url, name: claims-admin, url: https://YOUR-DOMAIN/mcp }
 multiagent:                               # orchestrators only — sub-agents must exist first
   type: coordinator
-  agents: [{type: agent, id: agt_..., version: 1}]
+  agents: [{type: agent, id: agent_..., version: 1}]
 metadata: { owner: <you>, workflow: <name>, role: Orchestrator|Reader|Writer }  # free-form; convention only
 ```
 
@@ -82,7 +82,7 @@ metadata: { owner: <you>, workflow: <name>, role: Orchestrator|Reader|Writer }  
 2. Edit the YAML; keep tool grants minimal per the 3-tier pattern above, and keep every `mcp_toolset` on `default_config.enabled: false` + a read allowlist (gotcha #4) — never a mutator blocklist.
    - After ANY change to an allowlist or an MCP url, run **`python3 validate.py`** — it asserts every granted tool name exists on the LIVE server that example points at. A deny-by-default allowlist with a stale tool name fails closed and SILENTLY: the agent just can't call it. validate.py is the only thing that tells you.
 3. Set `metadata.owner` / `workflow` / `role` — shared orgs fill fast and unlabeled agents get lost.
-4. `python3 deploy.py <file.yaml>` — creates the agent, prints `agt_...`. Then `python3 run.py --agent agt_... "<instruction>"` — creates a session, opens SSE, streams events. **deploy.py defines, run.py invokes.** In production, run.py becomes a webhook handler / cron / UI action.
+4. `python3 deploy.py <file.yaml>` — creates the agent, prints `agent_...`. Then `python3 run.py --agent agent_... "<instruction>"` — creates a session, opens SSE, streams events. **deploy.py defines, run.py invokes.** In production, run.py becomes a webhook handler / cron / UI action.
    - **Verify what actually got deployed**: `GET /v1/agents/:id` returns the full config the API is holding — diff it against `deploy.py --dry-run <file.yaml>`. Since the API silently drops unknown fields (gotcha #3), this round-trip diff is how you catch a typo'd field name. Cleanup is `POST /v1/agents/:id/archive` (not DELETE — there is no DELETE).
 5. Memory stores attach at **session-create** via `resources[]`, not on the agent — `run.py --memory-store memstore_...` does this; see `service/coverage-explainer.yaml` footer and `docs/memory-best-practices.md`.
 

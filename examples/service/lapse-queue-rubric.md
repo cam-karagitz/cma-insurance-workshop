@@ -18,7 +18,7 @@
 Attach it with one flag — `run.py` sends it as the kickoff:
 
 ```bash
-python3 run.py --agent agt_… --rubric examples/service/lapse-queue-rubric.md --ui \
+python3 run.py --agent agent_… --rubric examples/service/lapse-queue-rubric.md --ui \
   "Build this morning's lapse outreach queue. Lookback for recent contact: 7 days."
 ```
 

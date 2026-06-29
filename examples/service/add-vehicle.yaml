@@ -142,9 +142,9 @@ metadata:
 # =============================================================================
 # DEPLOY + RUN — including the approval round-trip
 # =============================================================================
-# 1. POST /v1/agents        (this file as JSON)                 → agt_...
+# 1. POST /v1/agents        (this file as JSON)                 → agent_...
 # 2. POST /v1/environments  {"name":"service"}                  → env_...
-# 3. POST /v1/sessions {"agent":"agt_...", "environment_id":"env_..."}
+# 3. POST /v1/sessions {"agent":"agent_...", "environment_id":"env_..."}
 #
 # 4. Open  GET /v1/sessions/:id/events/stream    ← BEFORE step 5, always.
 #    Session-create only provisions the container; nothing runs until an

@@ -121,12 +121,12 @@ metadata:
 # DEPLOY + RUN — memory attaches at SESSION-CREATE, not on the agent
 # =============================================================================
 # 1. POST /v1/memory_stores {"name":"coverage-patterns"}        → memstore_...
-# 2. POST /v1/agents        (this file as JSON)                 → agt_...
+# 2. POST /v1/agents        (this file as JSON)                 → agent_...
 # 3. POST /v1/environments  {"name":"service"}                  → env_...
 #
 # 4. POST /v1/sessions  ← MEMORY MOUNTS HERE, via resources[]:
 #    {
-#      "agent": "agt_...",
+#      "agent": "agent_...",
 #      "environment_id": "env_...",
 #      "resources": [{
 #        "type": "memory_store",

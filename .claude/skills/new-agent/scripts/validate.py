@@ -116,6 +116,17 @@ for f in files:
                 print(f"  ok    {label}  {len(granted)} granted, all real")
 
 print()
+# Courtesy check, NOT a failure: this script and --dry-run are stdlib-only on
+# purpose, so they both pass on a machine that cannot run a REAL deploy. The
+# first real `deploy.py` / `run.py` call imports `requests` and dies. Say so
+# now, at preflight time, not on workshop day.
+try:
+    import requests  # noqa: F401
+except ImportError:
+    print("WARNING: `requests` is not installed for this python. validate.py and")
+    print("`deploy.py --dry-run` do not need it -- but a REAL `deploy.py` or `run.py`")
+    print("call DOES, and it will die with ModuleNotFoundError. Fix it now (PREREQS.md):")
+    print("    python3 -m venv .venv && .venv/bin/pip install pyyaml requests\n")
 if fails:
     print(f"PREFLIGHT FAILED ({fails}) -- a granted tool name does not exist on its live server.")
     print("Fix the names above before workshop day; deny-by-default means those grants are silently dead.")

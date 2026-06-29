@@ -155,20 +155,20 @@ metadata:
 # DEPLOY + RUN — outcomes AND memory both attach at session time
 # =============================================================================
 # 1. POST /v1/memory_stores {"name":"retention-learnings"}       → memstore_...
-# 2. POST /v1/agents        (this file as JSON)                  → agt_...
+# 2. POST /v1/agents        (this file as JSON)                  → agent_...
 # 3. POST /v1/environments  {"name":"renewal-retention"}         → env_...
 #
 # 4. POST /v1/sessions  ← MEMORY attaches HERE via resources[]. The RUBRIC
 #    does NOT: it is sent as the run's KICKOFF (step 6) — one
 #    `user.define_outcome` event carrying both the instruction and the rubric.
 #    The one-line version of this whole footer:
-#        python3 run.py --agent agt_… --memory-store memstore_… \
+#        python3 run.py --agent agent_… --memory-store memstore_… \
 #            --rubric examples/sales/renewal-retention-rubric.md \
 #            "Renewal review: policy <ID>"
 #    run.py sends the define_outcome kickoff, attaches the memory store, and
 #    prints the grader's `outcome.result` score when it lands.
 #    {
-#      "agent": "agt_...",
+#      "agent": "agent_...",
 #      "environment_id": "env_...",
 #      "resources": [
 #

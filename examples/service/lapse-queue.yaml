@@ -251,8 +251,8 @@ metadata:
 # =============================================================================
 # 1. python3 deploy.py --dry-run examples/service/lapse-queue.yaml
 #      That JSON IS the POST /v1/agents body. Read it once — it is the whole
-#      lesson of this kit. Then drop --dry-run to actually create it → agt_…
-# 2. python3 run.py --agent agt_... --ui \
+#      lesson of this kit. Then drop --dry-run to actually create it → agent_…
+# 2. python3 run.py --agent agent_... --ui \
 #        --rubric examples/service/lapse-queue-rubric.md \
 #        "Build this morning's lapse outreach queue. Lookback for recent contact: 7 days."
 #

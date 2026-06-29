@@ -26,11 +26,11 @@ python3 validate.py
 # 1. Pick a pillar (claims | service | sales), then an example
 $EDITOR examples/claims/fnol-triage.yaml
 
-# 2. Deploy it — creates the agent, prints agt_... and a Console URL
+# 2. Deploy it — creates the agent, prints agent_... and a Console URL
 python3 deploy.py examples/claims/fnol-triage.yaml
 
 # 3. Run it — creates a session, opens the SSE stream, sends your prompt, prints events
-python3 run.py --agent agt_... "Triage claim CLM-2026-0001"
+python3 run.py --agent agent_... "Triage claim CLM-2026-0001"
 #    Add --ui for a localhost browser view of the SAME run: a live transcript,
 #    and an Approve / Deny card when the agent parks at requires_action. Built
 #    for the non-engineers in the room. The API key never leaves the python

@@ -6,7 +6,7 @@
 Attach it with one flag — `run.py` sends it as the kickoff:
 
 ```bash
-python3 run.py --agent agt_… --rubric examples/claims/adjudication-rubric.md \
+python3 run.py --agent agent_… --rubric examples/claims/adjudication-rubric.md \
   "Adjudicate claim CLM-2026-0412."
 ```
 

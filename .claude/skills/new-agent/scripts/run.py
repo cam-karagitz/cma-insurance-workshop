@@ -2,8 +2,8 @@
 """Run a session against a deployed Claude Managed Agent and stream the events.
 
 Usage:
-  python3 run.py --agent agt_... [--env env_...] [--memory-store memstore_...] "your instruction"
-  python3 run.py --ui --agent agt_... "your instruction"        # + a local browser view
+  python3 run.py --agent agent_... [--env env_...] [--memory-store memstore_...] "your instruction"
+  python3 run.py --ui --agent agent_... "your instruction"        # + a local browser view
 
 If --env is omitted, a default cloud environment is created and its ID printed
 so you can reuse it on subsequent runs.
@@ -45,7 +45,7 @@ def cma(method, path, body=None, **kw):
 
 
 ap = argparse.ArgumentParser()
-ap.add_argument("--agent", required=True, help="agent id from deploy.py (agt_...)")
+ap.add_argument("--agent", required=True, help="agent id from deploy.py (agent_...)")
 ap.add_argument("--env", help="environment id (env_...). Created if omitted.")
 ap.add_argument("--memory-store", help="memory_store id to attach read_write — the workflow's own learnings")
 ap.add_argument("--readonly-store", help="memory_store id to attach read_only — the claims manual / SOPs / reference standards. The agent reads it; it can NEVER write to it.")

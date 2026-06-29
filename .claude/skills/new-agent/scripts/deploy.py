@@ -57,7 +57,7 @@ if DRY_RUN:
         global _n; _n += 1
         print(f"\n--- {method} {API}{path} ---")
         print(json.dumps(body, indent=2))
-        return {"id": f"agt_DRYRUN_{_n}", "version": 1}
+        return {"id": f"agent_DRYRUN_{_n}", "version": 1}
 
 AGENT_FIELDS = ("name", "model", "system", "description", "tools",
                 "mcp_servers", "skills", "multiagent", "metadata")
