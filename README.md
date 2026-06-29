@@ -2,7 +2,7 @@
 
 Starter configs and a deploy script for building **Claude Managed Agents (CMA)** — Anthropic-hosted agents that run in cloud sandboxes, call your tools over MCP, and coordinate sub-agents.
 
-Eight insurance-shaped examples across three pillars — **claims**, **service**, **sales** — packaged as **two independent one-day workshops**: a Claims track and a Service & Sales track. Each example is a near-literal `POST /v1/agents` body plus a one-screen deploy script. What you read is what hits the wire.
+Ten insurance-shaped examples across three pillars — **claims**, **service**, **sales** — packaged as **two independent one-day workshops**: a Claims track and a Service & Sales track. Each example is a near-literal `POST /v1/agents` body plus a one-screen deploy script. What you read is what hits the wire.
 
 ## Prerequisites
 
@@ -18,6 +18,11 @@ Eight insurance-shaped examples across three pillars — **claims**, **service**
 #    agent streaming in your language and teaches the 4-resource model:
 #    /claude-api managed-agents-onboard
 
+# 0.5 Preflight (~5 seconds). Every MCP tool the examples grant is checked
+#     against the LIVE mock servers. A green PREFLIGHT CLEAN means the labs
+#     will actually run; do this before anyone deploys anything.
+python3 validate.py
+
 # 1. Pick a pillar (claims | service | sales), then an example
 $EDITOR examples/claims/fnol-triage.yaml
 
@@ -26,6 +31,10 @@ python deploy.py examples/claims/fnol-triage.yaml
 
 # 3. Run it — creates a session, opens the SSE stream, sends your prompt, prints events
 python run.py --agent agt_... "Triage claim CLM-2026-0001"
+#    Add --ui for a localhost browser view of the SAME run: a live transcript,
+#    and an Approve / Deny card when the agent parks at requires_action. Built
+#    for the non-engineers in the room. The API key never leaves the python
+#    process and nothing is deployed.
 
 # 4. Work through your track in lab order (tables below). Copy any example as your own starting point.
 ```
@@ -40,7 +49,7 @@ python run.py --agent agt_... "Triage claim CLM-2026-0001"
 | Anthropic SDKs (`client.beta.agents.create(...)`) — Python, TS, C#, Go, Java, PHP, Ruby | when deploy is part of a larger app |
 | `/claude-api managed-agents-onboard` in Claude Code | scaffolds the SDK code + run loop in your language |
 
-**Why these scripts exist anyway:** `deploy.py` handles the multi-doc YAML → subagents-first → roster-auto-wire pattern (the multi-agent capstone) that the CLI and SDKs don't do for you, and `--dry-run` prints the exact JSON body — useful for learning the API shape and for diffing what you wrote against what gets sent. `run.py` is the minimal session client every CMA integration needs — the part *you* still own: trigger a session, stream events, handle `requires_action`. In production that becomes a webhook handler, a cron, a button in your UI.
+**Why these scripts exist anyway:** `deploy.py` handles the multi-doc YAML → subagents-first → roster-auto-wire pattern (the multi-agent capstone) that the CLI and SDKs don't do for you, and `--dry-run` prints the exact JSON body — useful for learning the API shape and for diffing what you wrote against what gets sent. `run.py` is the minimal session client every CMA integration needs — the part *you* still own: trigger a session, stream events, **handle `requires_action`**. It does that for real: when an `always_ask` tool parks the session, run.py shows the full pending call and waits for your y/n (or for the Approve button in the `--ui` browser view), posts the `user.tool_approval`, and keeps streaming — the agent resumes on the same stream. In production that becomes a webhook handler, a cron, or a button in your adjuster UI; this is the reference for what that button does.
 
 **What they deliberately don't do:** staging vs prod, GitOps, diff-before-promote, rollback. Agents are versioned resources — that's the primitive. Your release process is yours to build on top. The API is the contract; these scripts are one way to call it.
 
@@ -50,22 +59,27 @@ python run.py --agent agt_... "Triage claim CLM-2026-0001"
 workshop-kit/
 ├── README.md / CLAUDE.md              # this file / Claude Code context
 ├── deploy.py                          # define: YAML/JSON → POST /v1/agents. --dry-run to preview.
-├── run.py                             # invoke: session create → SSE stream → send prompt → print events
+├── run.py  (+ ui.html)                # invoke: session → SSE → events → handle requires_action (terminal or --ui)
+├── validate.py                        # PREFLIGHT: every granted MCP tool must exist on its LIVE server
 ├── examples/
 │   ├── claims/
-│   │   ├── fnol-triage.yaml           # first agent — single agent, one MCP
-│   │   ├── siu-referral.yaml          # + memory store (learns fraud patterns)
-│   │   └── adjudication.yaml          # multi-agent — 3-tier reader/analyst/writer
+│   │   ├── fnol-triage.yaml           # first agent — single agent, one MCP, the gotchas
+│   │   ├── coverage-determination.yaml   (+ rubric)  # 3 MCPs incl. the documents server: a
+│   │   │                              #   determination that QUOTES the actual policy form
+│   │   ├── next-best-action.yaml         (+ rubric)  # read-only "claims manual" memory store,
+│   │   │                              #   one always_ask-gated action, a supervisor-owned rubric
+│   │   ├── siu-referral.yaml          # memory store (learns fraud patterns) + human-in-loop
+│   │   └── adjudication.yaml             (+ rubric)  # multi-agent 3-tier, 3 MCP servers
 │   ├── service/
 │   │   ├── coverage-explainer.yaml    # first agent + memory store
 │   │   ├── add-vehicle.yaml           # human-in-loop write (requires_action pattern)
 │   │   └── household-review.yaml      # multi-agent — 3-tier readers/writer
 │   └── sales/
-│       ├── quote-builder.yaml         # multi-MCP (rating + CRM + product catalog)
-│       └── renewal-retention.yaml     # + outcomes rubric (self-grading)
-├── MCP-SERVERS.md                     # workshop mock URLs + how to swap in your own
+│       ├── quote-builder.yaml         # multiple MCP servers, per-server read allowlists
+│       └── renewal-retention.yaml        (+ rubric)  # outcomes rubric (self-grading)
+├── MCP-SERVERS.md                     # the live mock servers + the deny-by-default convention
 └── docs/
-    └── memory-best-practices.md       # the memory `instructions` pattern
+    └── memory-best-practices.md       # the memory `instructions` pattern; read_only vs read_write
 ```
 
 The examples ship pointing at **hosted mock MCP servers** (synthetic data) so they run out of the box. See [`MCP-SERVERS.md`](MCP-SERVERS.md) to swap in your own — it's a one-line `url:` edit per server.
@@ -82,9 +96,10 @@ The examples ship pointing at **hosted mock MCP servers** (synthetic data) so th
 
 | Lab | Example | Teaches |
 |---|---|---|
-| 1 | `claims/fnol-triage` | first agent — config, one MCP, the gotchas |
-| 2 | `claims/siu-referral` | **memory** (learns fraud patterns) + **human-in-loop** (`refer_to_siu` parks at `requires_action`) |
-| 3 | `claims/adjudication` + `adjudication-rubric.md` | **multi-agent** 3-tier + **outcomes** (rubric-graded decision memo) |
+| 1 | `claims/fnol-triage` | first agent — config, one MCP, deny-by-default, the gotchas |
+| 2 | `claims/coverage-determination` + its rubric | **three MCP servers** (incl. the `policy-admin` index → `documents` content hop) and a coverage determination grounded in the **actual policy form** — every conclusion must quote the provision it relies on. **Outcomes** rubric owned by coverage counsel |
+| 3 | `claims/next-best-action` + its rubric | **memory** ("trained on the claims manual" = a `read_only` store) + **human-in-loop** (the one action it can take is gated `always_ask`) + **outcomes** (a rubric the claims supervisor owns) — all three production features in one example |
+| stretch | `claims/adjudication` + its rubric · `claims/siu-referral` | **multi-agent** 3-tier across 3 MCP servers — FNOL through coverage **and liability**, end to end · the deeper memory + human-in-loop combination |
 
 ### Service & Sales track
 

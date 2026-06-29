@@ -4,6 +4,16 @@ The example YAMLs ship pointing at **hosted mock MCP servers** so they run out o
 
 **To swap in your own:** edit the `url:` line under `mcp_servers:` in the YAML. The `name:` must match the `mcp_server_name:` in the corresponding `mcp_toolset` block — leave the name alone unless you're also renaming the toolset. Then **rebuild the allowlist**: run `tools/list` against your server and name the read tools the agent actually needs (curl recipe below).
 
+## Preflight: `validate.py` — run this before every workshop
+
+```bash
+python3 validate.py          # every example, against the LIVE servers
+```
+
+It loads every example, finds every `mcp_toolset`, calls `tools/list` on the **live** server that example actually points at, and asserts every granted (`enabled: true`) tool name exists there. Placeholder servers you haven't pointed at anything yet are reported and skipped.
+
+This exists because deny-by-default has one failure mode of its own: a tool name that is typo'd, renamed upstream, or never existed **fails closed** — the agent simply can't call it, and nothing tells you. The original versions of these examples shipped with several such names, and there was no way to notice short of reading every server's source. Now there is. A green `PREFLIGHT CLEAN` takes five seconds and is worth putting on the projector at minute zero.
+
 ## How the examples grant tools — deny-by-default, allowlist the reads
 
 Every `mcp_toolset` in this kit uses the same shape:
@@ -38,9 +48,10 @@ All seven share one coherent fictional world — the same households, agents, po
 | MCP `name` | Stands in for | Read tools | Write tools | Used by examples |
 |---|---|---|---|---|
 | `claims-admin` | ClaimCenter | `get_claim`, `get_claims_by_household`, `get_claims_by_policy`, `get_open_claims`, `get_cat_event_claims` | `file_fnol`, `refer_to_siu` | `claims/*` |
-| `policy-admin` | PolicyCenter | `get_policy`, `get_policies_by_household`, `get_coverage_summary`, `get_renewal_pipeline`, `get_property_detail`, `get_documents`, `rate_endorsement` | `request_id_card`, `endorse_policy` | `claims/siu-referral`, `claims/adjudication`, `service/*`, `sales/renewal-retention` |
+| `policy-admin` | PolicyCenter | `get_policy`, `get_policies_by_household`, `get_coverage_summary`, `get_renewal_pipeline`, `get_property_detail`, `get_documents`, `rate_endorsement` | `request_id_card`, `endorse_policy` | every `claims/*` except `fnol-triage`, `service/*`, `sales/renewal-retention` |
+| `documents` | Document repository (FileNet / OnBase) | `list_documents`, `get_document` — including the policy **contract with its full form language, by section** (call `get_document` on a `policy_contract` document_id from `policy-admin/get_documents`) and a claim's loss documents (FNOL report, field inspection, estimate, photos) | — | `claims/coverage-determination`, `claims/adjudication` |
 | `crm` | Salesforce agency CRM | `get_household`, `search_households`, `get_book_of_business`, `get_activities`, `get_life_events`, `get_opportunities` | `update_contact_info`, `escalate_to_agent` | `service/household-review` |
-| `billing` | BillingCenter | `get_billing_account`, `get_payment_history`, `get_delinquencies`, `get_invoice_schedule` | — | *(none yet — free for your own builds)* |
+| `billing` | BillingCenter | `get_billing_account`, `get_payment_history`, `get_delinquencies`, `get_invoice_schedule` | — | `claims/next-best-action` |
 | `quoting` | Rating / quote platform | `get_quote`, `get_quotes_by_household`, `get_open_quote_pipeline`, `explain_rate_factors` | — | *(none yet)* |
 | `uw-workbench` | Submission / UW queue | `get_submission`, `get_uw_queue`, `get_appetite_rules`, `evaluate_risk` | — | *(none yet)* |
 | `gl` | General ledger | `get_chart_of_accounts`, `get_trial_balance`, `get_journal_entries`, `get_budget`, `get_open_accruals` | — | *(none yet)* |
@@ -65,6 +76,7 @@ Both HITL examples exercise their gated write end-to-end against `ins-mocks` —
 - **`claims/siu-referral` → `refer_to_siu`** on `claims-admin`. The session parks at `requires_action`; on approval the referral lands ON the claim record, so `get_claim` immediately shows a structured `siuReferral` block plus an `SIU Intake` note. Idempotent: re-referring an already-referred claim returns the existing referral — concurrent attendees never duplicate.
 - **`service/add-vehicle` → `rate_endorsement` + `endorse_policy`** on `policy-admin`. The full GATHER → RATE → PRESENT → PAUSE → APPLY loop runs live, and the endorsed policy (new vehicle, endorsement row, bumped premium) is immediately visible in `get_policy` and `get_coverage_summary`.
   - **Deliberate demo hook:** rate a vehicle with `primary_use: business` or `annual_mileage > 25000` and `rate_endorsement` returns a non-null `referral`. The example's system prompt instructs the agent to STOP and route to underwriting — *without ever reaching the `endorse_policy` gate*. Two distinct human gates, demonstrable in one lab.
+- **`claims/next-best-action` → `refer_to_siu`** on `claims-admin` — the "Supervisor" lab. The agent reviews the open-claim queue against a **read-only claims-manual memory store**, and the single action it can execute itself parks at `requires_action` for the supervisor's approval (best shown with `run.py --ui`). Whether it fires on a given run depends on whether the *mounted manual's* referral criteria are met by an open claim — which is the demo: edit the manual, rerun the same queue, and the agent's behavior changes without touching the agent.
 
 > **Why these tools were added (a true war story for the room).** They landed on the mocks on 2026-06-29 — *after* the example configs were flipped to deny-by-default. Under the original blocklist configs, the moment `refer_to_siu` deployed it would have been silently callable by `fnol-triage` and the `adjudication` reader: no blocklist named it, because it did not exist when those blocklists were written. Under deny-by-default it arrived disabled everywhere except the one agent that explicitly grants it. *"What happens when the server adds a mutator?"* stopped being a hypothetical the same day the fix shipped.
 
@@ -72,7 +84,6 @@ Both HITL examples exercise their gated write end-to-end against `ins-mocks` —
 
 | MCP `name` | Needed by | What it should expose | Stand-in for workshop day |
 |---|---|---|---|
-| `documents` | `claims/adjudication` | `get_document`, `list_attachments` (claim photos, police reports, estimates) | `claims-admin`'s `get_claim` returns the loss description + adjuster-notes timeline; run adjudication with 2 of 3 servers |
 | `vehicle-data` | `sales/quote-builder` | `decode_vin`, `get_symbol`, `get_safety_rating` | Inline a hardcoded vehicle in the system prompt for the demo |
 | `driver-history` | `sales/quote-builder` | `lookup_mvr`, `lookup_clue` | Inline a clean-record assumption in the system prompt |
 | `rating-engine` | `sales/quote-builder` | `rate_risk(coverage, profile) → premium` | The hardest to fake — consider making `quote-builder` a "discuss the structure" lab rather than a live run, or stub a flat-rate response |

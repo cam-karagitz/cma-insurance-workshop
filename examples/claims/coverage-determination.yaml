@@ -1,0 +1,226 @@
+# =============================================================================
+# CLAIMS PILLAR — COVERAGE DETERMINATION  (single agent, three MCP servers,
+#                                          grounded in the ACTUAL policy form)
+# =============================================================================
+# What this example teaches:
+#   - A coverage agent that does not guess: it RETRIEVES the policy contract
+#     and quotes the exact provision behind every conclusion
+#   - THREE MCP servers composed into one workflow, including the two-system
+#     "index → content" hop that real document management requires:
+#       claims-admin  → the loss            (what happened)
+#       policy-admin  → the policy + the document INDEX (what exists)
+#       documents     → the document CONTENT, i.e. the FORM LANGUAGE itself
+#   - An OUTCOMES rubric (coverage-determination-rubric.md) that a coverage
+#     counsel / claims supervisor owns and can edit live in the room
+#
+# ⚠️  KEY LESSON OF THIS EXAMPLE — A DETERMINATION WITHOUT A CITATION IS AN
+#     OPINION. The hard rule below ("quote the provision verbatim, cite the
+#     form, section and paragraph") is what separates a coverage POSITION your
+#     adjusters can rely on from a model's plausible-sounding summary. The
+#     rubric grades exactly that, and the grader can VERIFY it, because the
+#     form text the agent cites is independently retrievable from the same
+#     documents server.
+#
+# WHY THE METHOD IN THE PROMPT LOOKS THE WAY IT DOES
+#   The homeowners form on the workshop mock (ANT-HO3) is an OPEN-PERIL form
+#   on the dwelling: direct physical loss is covered UNLESS EXCLUDED. The
+#   correct analysis therefore starts from "yes" and goes hunting for the
+#   provision that takes coverage away — not for the word "hail" in a list of
+#   covered perils (it isn't there, and doesn't need to be). Then: exclusions
+#   must be read for their carve-backs, and COVERAGE must never be conflated
+#   with SETTLEMENT. The recommended lab claim, CLM-2026-0419, needs all
+#   three moves: hail on an 18-year-old roof, with a "storm vs. age"
+#   causation dispute already sitting in the adjuster's notes.
+#
+# Maps to:  POST https://api.anthropic.com/v1/agents
+# Headers:  x-api-key / anthropic-version: 2023-06-01 /
+#           anthropic-beta: managed-agents-2026-04-01
+# =============================================================================
+
+name: coverage-determination
+
+model: claude-opus-4-8
+
+# -----------------------------------------------------------------------------
+# SYSTEM PROMPT — the method is the asset. Notice it mirrors the form's own
+# "HOW TO APPLY THIS FORM" reader's note: the agent's discipline and the
+# document it retrieves teach the same four steps.
+# -----------------------------------------------------------------------------
+system: |
+  You are the Coverage Analyst. Given a claim number, you determine whether
+  and how the policy responds to the loss, and you write that analysis to
+  /mnt/session/outputs/coverage-position.md.
+
+  METHOD — in this order, and do not skip ahead:
+
+    1. THE LOSS. Call claims-admin get_claim. Establish: what property was
+       damaged, what caused the damage, when the loss occurred, and what the
+       adjuster's notes already say. Treat the notes as the adjuster's
+       observations, not as legal conclusions.
+
+    2. THE POLICY. Call policy-admin get_policy. Confirm the policy was IN
+       FORCE on the date of loss and that the damaged property is on it. If
+       it was not in force, that is the whole determination — stop there.
+
+    3. THE FORM. You may not reason about coverage from a form you have not
+       read. Get it in two calls:
+         a. policy-admin get_documents(policy_id)  → find the entry whose
+            type is "policy_contract" and take its document_id.
+         b. documents get_document(document_id)    → the full form, section
+            by section. Each section has a stable id and title; cite them.
+       If the contract comes back not authored for that line of business,
+       SAY SO and stop. Never invent or paraphrase policy language.
+
+    4. THE ANALYSIS. For EACH coverage question the loss raises:
+         a. Is the damaged property covered property?
+         b. Is the CAUSE of loss insured against? On an open-peril form,
+            start from "a direct physical loss is covered" and look for the
+            provision that takes it away. Do not look for the peril in a
+            list; on an open-peril form there is no such list.
+         c. Does an exclusion arguably apply? If so, READ THE WHOLE
+            EXCLUSION, including its exceptions and carve-backs, before you
+            conclude. An exclusion you quote only half of is a wrong answer.
+         d. COVERAGE and SETTLEMENT are different questions. A loss can be
+            fully covered and still be settled at actual cash value rather
+            than replacement cost. Address how the loss is SETTLED under the
+            form's loss-settlement conditions, separately.
+
+    5. CORROBORATE. Where a fact drives the determination (for example the
+       age of a roof against a loss-settlement age threshold), do not rely
+       on a note alone — confirm it against the system of record
+       (policy-admin get_property_detail) and say whether the sources agree.
+
+  Write /mnt/session/outputs/coverage-position.md with EXACTLY these headings:
+
+    ## Claim
+    ## Policy In Force
+    ## Coverage Analysis
+       One sub-section per coverage question. EVERY sub-section must contain:
+         - The question, in one sentence.
+         - DETERMINATION: one of  COVERS | DOES NOT COVER |
+           COVERS, WITH LIMITATION | INSUFFICIENT INFORMATION
+         - CITATION: the form number, edition, section title and paragraph,
+           AND the VERBATIM quoted text of the provision relied on.
+         - REASONING: how that provision applies to these loss facts.
+    ## Settlement Considerations
+    ## Open Questions / Information Needed
+    ## DRAFT — Coverage Counsel & Adjuster Review Required
+
+  Hard rules:
+    - You RECOMMEND a coverage position. You do not decide one, and you
+      NEVER deny coverage. A "DOES NOT COVER" determination is a flag for
+      coverage counsel and the adjuster — say so, in those words.
+    - A determination that does not cite the form section it relies on is
+      not a determination; it is an opinion. Quote the provision verbatim.
+    - Attribute NOTHING to the policy form that you did not read in the form
+      text you retrieved. If you are tempted to write "policies typically…",
+      stop: only THIS policy matters.
+    - If the facts genuinely do not resolve a question (for example,
+      causation is pending an engineer's report), the determination is
+      INSUFFICIENT INFORMATION. Say precisely what is needed. Never force a
+      coverage call to look decisive.
+    - The final heading must appear verbatim. The grader is artifact-only.
+
+description: >-
+  Determines whether and how the policy responds to a loss by retrieving and
+  citing the ACTUAL policy form language; outputs a coverage-position memo a
+  coverage counsel can check line by line against the contract.
+
+# -----------------------------------------------------------------------------
+# TOOLS — three MCP servers, every one deny-by-default + a read allowlist.
+# This agent has NO write tool on any source system: a coverage analyst reads.
+# -----------------------------------------------------------------------------
+tools:
+
+  # Built-in sandbox tools — write/edit only to produce and revise the memo.
+  - type: agent_toolset_20260401
+    default_config:
+      enabled: false
+    configs:
+      - { name: read,  enabled: true }
+      - { name: grep,  enabled: true }
+      - { name: glob,  enabled: true }
+      - { name: write, enabled: true }   # emit /mnt/session/outputs/coverage-position.md
+      - { name: edit,  enabled: true }   # revise it after self-review
+      # NO bash. A coverage analyst has no reason to shell out.
+
+  # The claims system — exactly ONE read. The analyst needs the claim file
+  # and nothing else from this system; granting less than you could is the
+  # point. (Deny-by-default: any write — file_fnol, refer_to_siu, or one
+  # added next month — is unreachable because it is not named here.)
+  - type: mcp_toolset
+    mcp_server_name: claims-admin
+    default_config:
+      enabled: false
+      permission_policy: { type: always_allow }
+    configs:
+      - { name: get_claim, enabled: true }
+
+  # The policy system — the policy of record, the property of record, and
+  # the DOCUMENT INDEX. get_documents returns a document_id for the policy
+  # contract; that id is the handoff to the `documents` server below.
+  - type: mcp_toolset
+    mcp_server_name: policy-admin
+    default_config:
+      enabled: false
+      permission_policy: { type: always_allow }
+    configs:
+      - { name: get_policy,          enabled: true }
+      - { name: get_coverage_summary, enabled: true }
+      - { name: get_documents,       enabled: true }   # the INDEX → document_id
+      - { name: get_property_detail, enabled: true }   # corroborate roof age etc.
+
+  # The document repository — the CONTENT. This is where the actual contract
+  # language lives. Two reads; the second is the one that makes this agent a
+  # coverage analyst instead of a summarizer.
+  - type: mcp_toolset
+    mcp_server_name: documents
+    default_config:
+      enabled: false
+      permission_policy: { type: always_allow }
+    configs:
+      - { name: list_documents, enabled: true }
+      - { name: get_document,   enabled: true }   # ← the policy FORM, by section
+
+mcp_servers:
+  - { type: url, name: claims-admin, url: https://ins-mocks.vercel.app/claims-admin/mcp }   # Workshop mock — replace with your endpoint
+  - { type: url, name: policy-admin, url: https://ins-mocks.vercel.app/policy-admin/mcp }   # Workshop mock — replace with your endpoint
+  - { type: url, name: documents,    url: https://ins-mocks.vercel.app/documents/mcp }      # Workshop mock — your DMS / FileNet / OnBase
+
+# -----------------------------------------------------------------------------
+# METADATA — free-form key/value (≤512 chars/value). Convention only.
+# -----------------------------------------------------------------------------
+metadata:
+  owner:    <YOUR_TEAM_NAME>
+  workflow: coverage-determination
+  role:     single-agent
+  category: claims
+
+# =============================================================================
+# DEPLOY + RUN — the recommended lab claim is CLM-2026-0419
+# =============================================================================
+# 1. python deploy.py examples/claims/coverage-determination.yaml   → agt_...
+# 2. python run.py --agent agt_... "Determine coverage for claim CLM-2026-0419."
+#    (add --ui to put the live run, and the approval gate in other labs, in a
+#     browser for the non-engineers in the room)
+#
+# WHY CLM-2026-0419: hail damage to an 18-year-old roof, and the adjuster's
+# own notes already record "pre-existing wear on 3 slopes; pending engineer
+# review for storm vs. age causation." A correct memo has to make three
+# distinct moves against the real form text, and a coverage counsel in the
+# room can check every one of them against the quoted provisions:
+#   1. The dwelling is OPEN-PERIL — hail is covered because nothing excludes
+#      it, not because it appears in a list.   (ANT-HO3, Section I — Perils)
+#   2. The Wear-and-Tear / Deterioration exclusion is RAISED by the facts but
+#      its own ensuing-loss carve-back puts a distinct, sudden hail event
+#      back in. Half-quoting that exclusion produces the wrong answer.
+#   3. Coverage ≠ settlement: the Roof Surfacing condition settles a roof
+#      MORE THAN 15 YEARS OLD at actual cash value. The 18-year-old roof is
+#      covered AND depreciated — which is exactly what the adjuster did, and
+#      now the memo can cite the contractual authority for it.
+#
+# 3. Outcomes (optional, recommended): attach coverage-determination-rubric.md
+#    at session create — see sales/renewal-retention.yaml for the exact
+#    resources[] shape. The rubric is owned by your coverage counsel; have
+#    them edit a criterion in the room, rerun, and watch the score change.
+# =============================================================================

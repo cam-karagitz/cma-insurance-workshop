@@ -65,8 +65,10 @@ metadata: { owner: <you>, workflow: <name>, role: Orchestrator|Reader|Writer }  
 1. **Match the user's ask to a pillar (claims / service / sales) first, then the closest example.** Copy it; don't write configs from scratch.
    - **claims/**
      - `fnol-triage.yaml` — teaches: first agent — single agent, one MCP, deny-by-default toolset, the gotchas
+     - `coverage-determination.yaml` + `coverage-determination-rubric.md` — teaches: a determination grounded in the ACTUAL policy form — three MCP servers including the `policy-admin` (index) → `documents` (content) hop; the hard rule that every conclusion must quote the provision it relies on; an outcomes rubric a coverage counsel owns
+     - `next-best-action.yaml` + `next-best-action-rubric.md` — teaches: "trained on the claims manual" = a READ-ONLY memory store (`run.py --readonly-store`, exact literal `read_only`) beside the workflow's read-write learnings store; an outcomes rubric a claims SUPERVISOR owns; and exactly ONE executable action, gated behind `always_ask`
      - `siu-referral.yaml` — teaches: memory store (learns fraud patterns) + human-in-loop write (`refer_to_siu` → `requires_action`)
-     - `adjudication.yaml` + `adjudication-rubric.md` — teaches: multi-agent 3-tier + outcomes rubric (self-graded decision memo)
+     - `adjudication.yaml` + `adjudication-rubric.md` — teaches: multi-agent 3-tier + outcomes rubric (self-graded decision memo). Runs 3-of-3 MCP servers (`documents` is live)
    - **service/**
      - `coverage-explainer.yaml` — teaches: first agent + memory store attached at session-create via `resources[]`
      - `add-vehicle.yaml` — teaches: human-in-the-loop write — `always_ask` → handle `requires_action`
@@ -75,6 +77,7 @@ metadata: { owner: <you>, workflow: <name>, role: Orchestrator|Reader|Writer }  
      - `quote-builder.yaml` — teaches: multiple MCP servers, each with its own deny-by-default read allowlist
      - `renewal-retention.yaml` — teaches: outcomes rubric — agent self-grades its own output
 2. Edit the YAML; keep tool grants minimal per the 3-tier pattern above, and keep every `mcp_toolset` on `default_config.enabled: false` + a read allowlist (gotcha #4) — never a mutator blocklist.
+   - After ANY change to an allowlist or an MCP url, run **`python3 validate.py`** — it asserts every granted tool name exists on the LIVE server that example points at. A deny-by-default allowlist with a stale tool name fails closed and SILENTLY: the agent just can't call it. validate.py is the only thing that tells you.
 3. Set `metadata.owner` / `workflow` / `role` — shared orgs fill fast and unlabeled agents get lost.
 4. `python deploy.py <file.yaml>` — creates the agent, prints `agt_...`. Then `python run.py --agent agt_... "<instruction>"` — creates a session, opens SSE, streams events. **deploy.py defines, run.py invokes.** In production, run.py becomes a webhook handler / cron / UI action.
    - **Verify what actually got deployed**: `GET /v1/agents/:id` returns the full config the API is holding — diff it against `deploy.py --dry-run <file.yaml>`. Since the API silently drops unknown fields (gotcha #3), this round-trip diff is how you catch a typo'd field name. Cleanup is `POST /v1/agents/:id/archive` (not DELETE — there is no DELETE).

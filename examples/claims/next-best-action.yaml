@@ -1,0 +1,235 @@
+# =============================================================================
+# CLAIMS PILLAR — NEXT BEST ACTION  ("the Supervisor agent")
+#   single agent · read-only "claims manual" memory store · outcomes rubric
+#   · ONE gated action behind human approval
+# =============================================================================
+# This example is a customer sentence, decomposed:
+#
+#   "An agent TRAINED ON OUR CLAIMS MANUAL and SOPs that can REVIEW A SUBSET
+#    OF CLAIMS and IDENTIFY NEXT BEST ACTIONS."  — a "Supervisor agent"
+#
+#   "review a subset of claims"   →  claims-admin `get_open_claims` IS the
+#                                    subset. That's the whole queue mechanic.
+#   "trained on our claims manual"→  NOT fine-tuning. A READ-ONLY memory store
+#                                    mounted at session-create. The agent
+#                                    reads the manual; it can never rewrite
+#                                    it. Swapping in YOUR manual is one
+#                                    `POST /v1/memory_stores` + an upload.
+#   "Supervisor"                  →  the HUMAN. They own two things: the
+#                                    outcomes RUBRIC the agent is graded
+#                                    against (next-best-action-rubric.md,
+#                                    written in English, edited live in the
+#                                    room), and the APPROVAL of the one
+#                                    action the agent can actually take.
+#
+# ⚠️  KEY LESSON #1 — "TRAINED ON" = A READ-ONLY MEMORY STORE.
+#   This is the recommended memory architecture in docs/memory-best-practices.md:
+#   one frozen read_only STANDARDS store (the manual — the org wrote it) and,
+#   optionally, one read_write LEARNINGS store (what THIS workflow figures
+#   out). That contrast — "the manual" vs "what the agent learned" — is what
+#   a compliance reviewer needs to see, and `read_only` is the exact literal
+#   (the typo `readonly` is silently accepted and ESCALATES to read_write).
+#
+# ⚠️  KEY LESSON #2 — THE AGENT RECOMMENDS A QUEUE; IT EXECUTES ONE THING,
+#   AND THAT ONE THING IS GATED. Every "next best action" in the output is a
+#   recommendation for a human. The single action this agent can take itself
+#   — `refer_to_siu` — carries `permission_policy: always_ask`, so the session
+#   PARKS at `requires_action` until the supervisor approves. run.py shows the
+#   full pending call and waits (add `--ui` to put that approval card in a
+#   browser for the supervisor). Whether the agent attempts the referral on a
+#   given run depends on whether the MOUNTED MANUAL's referral criteria are
+#   met by an open claim — which is the point: edit the manual, rerun, and
+#   the agent's behavior changes. The manual is the policy lever.
+#
+# Maps to:  POST https://api.anthropic.com/v1/agents
+# Headers:  x-api-key / anthropic-version: 2023-06-01 /
+#           anthropic-beta: managed-agents-2026-04-01
+# =============================================================================
+
+name: next-best-action
+
+model: claude-opus-4-8
+
+# -----------------------------------------------------------------------------
+# SYSTEM PROMPT
+# Note how little memory guidance lives here — "a manual may be mounted; read
+# all of it first; its attachment instructions govern." The real hygiene rules
+# live in the per-attachment `instructions` string at session create (footer),
+# so the same agent runs cleanly with no store attached, and a claims leader
+# can tune the rules without shipping a new agent version.
+# -----------------------------------------------------------------------------
+system: |
+  You are the Claims Supervisor's Next-Best-Action assistant. Each day a
+  human claims supervisor reviews a queue of open claims and decides what
+  each one needs next. You do that first pass, grounded in the organization's
+  claims manual. The supervisor decides.
+
+  If a claims manual is mounted under /mnt/memory/, READ EVERY FILE IN IT
+  BEFORE YOU LOOK AT A SINGLE CLAIM. It is the standard you are held to, and
+  its attachment instructions govern how you use it.
+
+  Workflow:
+    1. THE SUBSET. Call claims-admin get_open_claims (filtered to one
+       adjuster if you were given one). That list IS your review queue.
+    2. PER CLAIM, pull exactly what you need to apply the manual:
+         - get_claim                  — the full file, reserves, notes, aging
+         - get_claims_by_household    — frequency and prior-loss patterns
+         - policy-admin get_policy    — is coverage in force; what applies
+         - billing get_billing_account, and (once, across the whole queue)
+           billing get_delinquencies  — a delinquent account with an open
+           claim is a handling rule in most claims manuals, including the
+           one mounted here.
+    3. THE QUEUE. Write /mnt/session/outputs/next-actions.md with one
+       section per claim. EVERY section must contain:
+         - STATUS  : one sentence — what state is this claim actually in?
+         - NEXT BEST ACTION : ONE specific, executable action a named person
+           could take today. Examples of the right granularity: "request the
+           engineer's causation report", "issue the ACV payment supported by
+           the estimate on file", "place a billing hold per <rule>",
+           "refer to SIU", "send the 30-day status letter",
+           "no action — on track". Never "monitor" or "follow up".
+         - MANUAL CITATION : the file and rule in the mounted manual that
+           makes this the right action. If the manual does not address the
+           situation, write exactly "NOT IN MANUAL" and give your reasoning.
+           NEVER attribute a rule to the manual that you did not read in it.
+         - AUTHORITY : within standard adjuster authority, or escalate — why.
+         - AGING : days open versus what the manual expects at this stage.
+       Then a final "## Queue Summary" — the three claims the supervisor
+       should look at FIRST, ranked, each with the one-line reason.
+    4. ACTION — ONE, AND IT IS GATED. The only action you can execute
+       yourself is refer_to_siu. It is gated: the session WILL pause for
+       your supervisor's approval, and that pause is correct behavior. You
+       may attempt it AT MOST ONCE per run, ONLY for the single strongest
+       case, ONLY when the mounted manual's referral criteria are met, and
+       ONLY AFTER next-actions.md is written. Do not retry it and do not
+       try to work around the pause. Every other action in your queue is a
+       recommendation for a human; you never execute it.
+
+  Hard rules:
+    - You RECOMMEND; the supervisor DECIDES. Every action you list is a
+      recommendation, and the document must say so.
+    - Cite the manual or say NOT IN MANUAL. There is no third option.
+    - Never use protected-class attributes, or proxies for them, in any
+      prioritization or referral reasoning.
+    - End next-actions.md with the line:
+        DRAFT — Claims Supervisor Review Required
+
+description: >-
+  Reviews the open-claim queue against the organization's claims manual
+  (mounted as a read-only memory store) and writes a per-claim next-best-action
+  queue with manual citations; its single executable action is gated behind a
+  human supervisor's approval.
+
+# -----------------------------------------------------------------------------
+# TOOLS — every mcp_toolset is deny-by-default with an explicit allowlist.
+# This agent's entire purpose is judgment over a queue, so the grant set is
+# DELIBERATELY narrow: the subset, the file, the policy, the billing signal,
+# and exactly one gated action.
+# -----------------------------------------------------------------------------
+tools:
+
+  # Built-ins: read/grep/glob to consult the mounted manual; write/edit to
+  # produce and revise the queue. NO bash — a reviewer never shells out, and
+  # this agent reads claimant-supplied text inside claim notes.
+  - type: agent_toolset_20260401
+    default_config:
+      enabled: false
+    configs:
+      - { name: read,  enabled: true }   # read /mnt/memory/<manual>/*
+      - { name: grep,  enabled: true }   # search the manual by rule
+      - { name: glob,  enabled: true }
+      - { name: write, enabled: true }   # emit /mnt/session/outputs/next-actions.md
+      - { name: edit,  enabled: true }
+
+  # The claims system. THE SUBSET is get_open_claims — the customer's exact
+  # word for it. refer_to_siu is the ONE write the agent may attempt, and it
+  # is enabled WITH a per-tool always_ask: the supervisor's approval gate.
+  - type: mcp_toolset
+    mcp_server_name: claims-admin
+    default_config:
+      enabled: false
+      permission_policy: { type: always_allow }
+    configs:
+      - { name: get_open_claims,         enabled: true }   # ← "a subset of claims"
+      - { name: get_claim,               enabled: true }
+      - { name: get_claims_by_household, enabled: true }   # frequency / prior loss
+      # The ONE gated action. Live on the workshop mock; idempotent (a second
+      # referral of the same claim returns the existing one, never a duplicate).
+      - { name: refer_to_siu, enabled: true, permission_policy: { type: always_ask } }
+      # file_fnol and every other write are unreachable: not named, not callable.
+
+  # The policy system — one read. Is the policy in force, and what responds.
+  - type: mcp_toolset
+    mcp_server_name: policy-admin
+    default_config:
+      enabled: false
+      permission_policy: { type: always_allow }
+    configs:
+      - { name: get_policy, enabled: true }
+
+  # Billing — the cross-system signal a supervisor actually checks. A
+  # delinquent account with an open claim is an SOP-driven handling rule.
+  - type: mcp_toolset
+    mcp_server_name: billing
+    default_config:
+      enabled: false
+      permission_policy: { type: always_allow }
+    configs:
+      - { name: get_billing_account, enabled: true }
+      - { name: get_delinquencies,   enabled: true }
+
+mcp_servers:
+  - { type: url, name: claims-admin, url: https://ins-mocks.vercel.app/claims-admin/mcp }   # Workshop mock — replace with your endpoint
+  - { type: url, name: policy-admin, url: https://ins-mocks.vercel.app/policy-admin/mcp }   # Workshop mock — replace with your endpoint
+  - { type: url, name: billing,      url: https://ins-mocks.vercel.app/billing/mcp }        # Workshop mock — replace with your endpoint
+
+# -----------------------------------------------------------------------------
+# METADATA — free-form key/value (≤512 chars/value). Convention only.
+# -----------------------------------------------------------------------------
+metadata:
+  owner:    <YOUR_TEAM_NAME>
+  workflow: next-best-action
+  role:     single-agent
+  category: claims
+
+# =============================================================================
+# DEPLOY + RUN — "trained on the manual" is the resources[] block, not the agent
+# =============================================================================
+# 1. The MANUAL. Create a memory store and put your claims manual / SOPs in
+#    it as a handful of markdown files. For the workshop, a seeded standards
+#    store already exists (severity tiers, escalation rules, billing holds,
+#    reserve guidelines) — ask the facilitator for its memstore_... id.
+# 2. python deploy.py examples/claims/next-best-action.yaml        → agt_...
+# 3. python run.py --agent agt_... \
+#        --readonly-store memstore_<THE MANUAL>   \   # ← "trained on our SOPs"
+#        --memory-store   memstore_<ITS LEARNINGS> \  # ← optional, read_write
+#        --ui \
+#        "Review the open claim queue and give me next best actions."
+#
+#    --readonly-store mounts the manual with "access": "read_only". The exact
+#    literal matters: `readonly` (no underscore) is silently accepted by the
+#    API and ESCALATES to read_write — a privilege-escalation bug, and exactly
+#    the prompt-injection vector a shared standards store must never have.
+#    The agent reads the manual. It can never rewrite the manual. Say that
+#    sentence in the room; it is the governance line.
+#
+# 4. WHAT TO WATCH FOR ON THE STREAM:
+#      agent.* …                  the queue being built
+#      agent.tool_use_request     refer_to_siu — the ONE gated action
+#      session.requires_action    ← THE SUPERVISOR MOMENT. run.py shows the
+#                                   full pending call and waits for y/n
+#                                   (or the Approve button under --ui).
+#      session.status_idle        next-actions.md is in /mnt/session/outputs/
+#      outcome.result             the grader's score against the rubric
+#    Whether refer_to_siu fires at all depends on whether the MANUAL's
+#    referral criteria are met by an open claim. That is the demo: edit the
+#    manual, rerun the same queue, and the agent's behavior changes — without
+#    touching the agent. The manual is the policy lever; the rubric is the
+#    quality bar; the supervisor owns both, in English.
+#
+# 5. Outcomes: attach next-best-action-rubric.md at session create (the same
+#    resources[] shape as the memory stores — see the rubric file's header).
+#    Your CLAIMS SUPERVISOR owns that rubric. The single highest-value moment
+#    in this lab is handing them the rubric, asking "are these the right five
+#    criteria?", letting them change one, and rerunning.
+# =============================================================================

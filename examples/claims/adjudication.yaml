@@ -106,22 +106,25 @@ tools:
       - { name: get_property_detail,       enabled: true }
       - { name: get_documents,             enabled: true }   # the policy form itself
 
-  # Document repository — read-only. Estimates, photos, reports.
-  # No workshop mock exists for `documents`. For the lab, claims-admin's
-  # `get_claim` already returns the loss description and the adjuster-notes
-  # timeline — enough to exercise the pattern (see MCP-SERVERS.md). When you
-  # have a real document MCP, ADD it here and to mcp_servers below:
-  # - type: mcp_toolset
-  #   mcp_server_name: documents
-  #   default_config: { enabled: false, permission_policy: { type: always_allow } }
-  #   configs:
-  #     - { name: get_document,     enabled: true }
-  #     - { name: list_attachments, enabled: true }
+  # Document repository — read-only. The loss documents this reader's prompt
+  # has always asked for (the FNOL report, the field inspection, the estimate,
+  # the photo manifest) AND the policy contract itself. LIVE on the workshop
+  # mock: list_documents(claim_id) returns the claim's documents and its
+  # POLICY's documents — including the contract with the full form language —
+  # so the reader's bundle can quote the actual provision, not paraphrase it.
+  - type: mcp_toolset
+    mcp_server_name: documents
+    default_config:
+      enabled: false
+      permission_policy: { type: always_allow }
+    configs:
+      - { name: list_documents, enabled: true }   # the index, by claim_id and/or policy_id
+      - { name: get_document,   enabled: true }   # the content — incl. the policy FORM
 
 mcp_servers:
   - { type: url, name: claims-admin, url: https://ins-mocks.vercel.app/claims-admin/mcp }
   - { type: url, name: policy-admin, url: https://ins-mocks.vercel.app/policy-admin/mcp }
-  # - { type: url, name: documents,  url: https://YOUR-DOMAIN/documents/mcp }   # add your real one
+  - { type: url, name: documents,    url: https://ins-mocks.vercel.app/documents/mcp }      # Workshop mock — replace with your DMS
 
 metadata:
   owner:    <YOUR_TEAM_NAME>
