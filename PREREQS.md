@@ -8,13 +8,21 @@ Please complete these **before** the session — the first 30 minutes assume you
   - Confirm: `curl -s https://api.anthropic.com/v1/agents -H "x-api-key: $ANTHROPIC_API_KEY" -H "anthropic-version: 2023-06-01" -H "anthropic-beta: managed-agents-2026-04-01"` returns `{"data": [...]}`, not a 403/404
   - If you get `beta feature not enabled`, ask your Anthropic contact to enable `managed-agents-2026-04-01` on your org
 - [ ] **Console access** at https://platform.claude.com — you should see a "Managed Agents" tab in your workspace
+- [ ] **Network reachability — checked from the network you will actually be on during the workshop** (corporate Wi-Fi / VPN, not a phone hotspot). Corporate proxies sometimes block one of these, and finding out on the day costs you the first lab:
+  - `https://platform.claude.com` opens in your browser
+  - `https://ins-mocks.vercel.app/` opens in your browser — that page lists the hosted mock insurance systems the examples call (all data is synthetic)
+  - the API-key `curl` above returns JSON, which also proves `api.anthropic.com` is reachable
+  - If any of the three is blocked, ask your network team to allow `api.anthropic.com`, `platform.claude.com`, and `ins-mocks.vercel.app` over HTTPS (443), and reply to the invite so we know before the day.
+  - *Why this is only about your laptop:* the agents you'll build run in **Anthropic's cloud** and call the mock MCP servers from there — your corporate network is not in that path and cannot break the agents. This check covers your local tooling (`deploy.py`, `run.py`, `validate.py`) and the Console.
 - [ ] **Python 3.10+** with `pyyaml` + `requests` — use a venv (modern macOS/Linux block system pip via PEP 668):
   ```
   python3 -m venv .venv && .venv/bin/pip install pyyaml requests
   ```
   Then run scripts as `.venv/bin/python3 deploy.py ...` (or `source .venv/bin/activate` first)
 - [ ] **Clone this repo**: `git clone https://github.com/cam-karagitz/cma-insurance-workshop && cd cma-insurance-workshop`
-- [ ] **Verify the kit**: `python deploy.py --dry-run examples/claims/fnol-triage.yaml` — should print a JSON request body, no errors
+- [ ] **Verify the kit**, two commands:
+  - `python deploy.py --dry-run examples/claims/fnol-triage.yaml` — prints a JSON request body, no errors (offline; proves the tooling works)
+  - `python validate.py` — must end with `PREFLIGHT CLEAN`. This one calls the **live** hosted mock servers and asserts every tool the examples grant actually exists there, so it doubles as proof that your network can reach the mocks.
 - [ ] Confirm **outcomes** and **multiagent** are enabled on your org (separate from the managed-agents beta — ask your Anthropic contact). Labs 3+ depend on these.
 
 ## Recommended
