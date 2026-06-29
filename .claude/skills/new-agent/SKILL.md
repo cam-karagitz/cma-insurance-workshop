@@ -198,9 +198,16 @@ production bar, and the note that the grader sees only the output directory.
 3. **Show the wire.**
    `python3 ${CLAUDE_SKILL_DIR}/scripts/deploy.py --dry-run <the yaml>` and
    point at it once: this exact JSON is what hits `POST /v1/agents`.
-4. **Deploy — but check the key first.** `deploy.py` and `run.py` need an
-   `ANTHROPIC_API_KEY` (with the managed-agents beta) in the environment, and
-   on a first run most people don't have it exported. Check before you try:
+4. **Deploy — but check the key AND the deps first.** Two things block a
+   first real deploy, and neither shows up in a dry-run:
+   - **Deps.** `deploy.py`/`run.py` import `requests` only for REAL calls, so
+     a machine that dry-ran fine can still fail here. Check:
+     `python3 -c "import requests, yaml; print('deps OK')"`. If that fails,
+     offer the standard fix — `python3 -m venv .venv && .venv/bin/pip install
+     pyyaml requests` — and use `.venv/bin/python3` for every later command.
+     Never `pip install` into their system python uninvited.
+   - **The key.** `ANTHROPIC_API_KEY` (with the managed-agents beta) must be
+     in the environment, and on a first run it usually is not. Check:
    `python3 -c "import os;print('set' if os.environ.get('ANTHROPIC_API_KEY') else 'NOT SET')"`.
    If it is NOT set, stop and ask which they prefer — do not guess:
    - they export it in their shell (`export ANTHROPIC_API_KEY=…`) and tell
