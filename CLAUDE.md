@@ -63,6 +63,8 @@ metadata: { owner: <you>, workflow: <name>, role: Orchestrator|Reader|Writer }  
 
 ## When the user asks to build an agent
 
+**Prefer the `/new-agent` skill** (it ships in this repo at `.claude/skills/new-agent/` and loads automatically). It is the guided, interview-driven version of the steps below: it asks what the agent does, which systems and tools it reads, whether an action needs a human gate, whether it needs the manual (a read-only memory store), and who owns the rubric — then writes the fully-commented example YAML, **shows it to the user before anything deploys**, and runs `validate.py` → `deploy.py --dry-run` → `deploy.py` → `run.py --ui`. It generates config; it never calls the API itself. The skill is **fully self-contained** — `.claude/skills/new-agent/` bundles its own copies of `deploy.py`, `validate.py`, `run.py`, and the tool inventory under `scripts/` and `references/`, so it also works installed standalone (`cp -R .claude/skills/new-agent ~/.claude/skills/`) in any repo. ⚠️ Those bundled files are point-in-time COPIES: **if you change `deploy.py`, `run.py`, `validate.py`, or `MCP-SERVERS.md`, re-publish the bundle** or it will drift. If you are building an agent by hand instead:
+
 1. **Match the user's ask to a pillar (claims / service / sales) first, then the closest example.** Copy it; don't write configs from scratch.
    - **claims/**
      - `fnol-triage.yaml` — teaches: first agent — single agent, one MCP, deny-by-default toolset, the gotchas

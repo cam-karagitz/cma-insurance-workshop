@@ -11,16 +11,22 @@
 > minute of the lab: hand it to them, ask "are these the right five
 > criteria?", let them change one, rerun the same queue, watch the score move.
 
-Attach at session-create alongside the memory stores (see footer of
-`next-best-action.yaml`):
+Attach it with one flag — `run.py` sends it as the kickoff (memory stores still
+attach via `resources[]`; the rubric does not):
 
-```json
-"resources": [{
-  "type": "outcome",
-  "rubric": "<contents of this file>",
-  "output_glob": "/mnt/session/outputs/**"
-}]
+```bash
+python3 run.py --agent agt_… --readonly-store memstore_<THE MANUAL> \
+  --rubric examples/claims/next-best-action-rubric.md --ui \
+  "Review the open claim queue and give me next best actions."
 ```
+
+(Under the hood `--rubric` sends a single `user.define_outcome` event carrying
+BOTH the instruction and this rubric — `{"type":"user.define_outcome",
+"description":"<the instruction>","rubric":{"type":"text","content":"<this
+file>"},"max_iterations":5}` — the same call the operations console makes. It is
+**not** a session-create `resources[]` entry, and the rubric is a nested object,
+not a bare string. When the grader finishes, `run.py` prints the
+`outcome.result` score.)
 
 Each criterion scores **0 / 1 / 2** unless noted. Max 10. Production bar: **≥ 8**.
 

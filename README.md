@@ -37,6 +37,22 @@ python run.py --agent agt_... "Triage claim CLM-2026-0001"
 #    process and nothing is deployed.
 
 # 4. Work through your track in lab order (tables below). Copy any example as your own starting point.
+
+# 5. Build YOUR OWN. Open this repo in Claude Code and type:
+#       /new-agent
+#    It interviews you (what should it do, which systems, which tools, does an
+#    action need a human's approval, who owns the quality bar), then writes a
+#    fully-commented example YAML you keep, validates every granted tool
+#    against the LIVE mock servers, and deploys + runs it — using the exact
+#    same deploy.py / validate.py / run.py you just used by hand. The YAML is
+#    the deliverable; the skill never hides it from you.
+#
+#    TAKE IT WITH YOU — /new-agent is fully self-contained (it carries its own
+#    copies of deploy.py, validate.py, run.py and the live tool inventory), so
+#    it works in YOUR repos too, not just this one:
+#       cp -R .claude/skills/new-agent ~/.claude/skills/        # every Claude Code session
+#    Cowork / Claude Desktop: zip it and upload via Customize → Skills:
+#       (cd .claude/skills && zip -r ~/new-agent.zip new-agent)
 ```
 
 ## About `deploy.py` and `run.py`

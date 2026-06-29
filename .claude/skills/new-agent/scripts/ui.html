@@ -1,0 +1,406 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<meta name="referrer" content="no-referrer">
+<title>Agent Session — Live</title>
+<link rel="icon" href="data:,">
+<style>
+/* Self-contained on purpose: no CDN, no external font, no images.            */
+:root{
+  --bg:#0d1117; --surface:#151b24; --surface2:#1b2330; --line:#28303d;
+  --text:#e3e8ef; --dim:#94a0b3; --faint:#5d6a82;
+  --accent:#62a8ff; --green:#41c98b; --red:#ff6b70; --amber:#ffb224;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+}
+*,*::before,*::after{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;background:var(--bg);color:var(--text);
+  font:15px/1.55 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  display:flex;flex-direction:column;overflow:hidden;-webkit-font-smoothing:antialiased;
+}
+code{font-family:var(--mono)}
+
+/* Thin state bar across the very top — the page-wide "something changed" cue */
+#statebar{flex:none;height:3px;background:var(--faint);transition:background .25s ease}
+body[data-status="running"] #statebar{background:var(--accent)}
+body[data-status="requires_action"] #statebar{height:5px;background:var(--amber);animation:barpulse 1.1s ease-in-out infinite}
+body[data-status="idle"] #statebar{background:var(--green)}
+body[data-status="error"] #statebar{background:var(--red)}
+@keyframes barpulse{0%,100%{opacity:1}50%{opacity:.35}}
+
+header{
+  flex:none;display:flex;align-items:center;justify-content:space-between;gap:1rem 2rem;flex-wrap:wrap;
+  padding:1.05rem 1.7rem;border-bottom:1px solid var(--line);background:var(--surface);
+  transition:background .25s ease,border-color .25s ease;
+}
+body[data-status="requires_action"] header{background:#201a0e;border-bottom-color:rgba(255,178,36,.45)}
+h1{margin:0;font-size:1.06rem;font-weight:650;letter-spacing:.01em}
+h1 .sub{font-weight:400;color:var(--dim)}
+.ids{display:flex;flex-wrap:wrap;align-items:baseline;gap:.3rem 1.5rem;margin-top:.45rem;font-size:.8rem;color:var(--dim)}
+.ids b{font-weight:600;color:var(--faint);text-transform:uppercase;letter-spacing:.08em;font-size:.66rem;margin-right:.45rem}
+.ids code{font-size:.8rem;color:var(--text);word-break:break-all}
+.ids a{color:var(--accent);text-decoration:none;border-bottom:1px solid rgba(98,168,255,.35)}
+.ids a:hover{border-bottom-color:var(--accent)}
+.ids a.off{pointer-events:none;opacity:.35;border-bottom-color:transparent}
+
+.pill{
+  flex:none;display:inline-flex;align-items:center;gap:.6rem;padding:.52rem 1.05rem;border-radius:999px;
+  border:1px solid var(--line);background:var(--surface2);font-size:.73rem;font-weight:700;
+  letter-spacing:.12em;text-transform:uppercase;color:var(--dim);white-space:nowrap;
+}
+.pill .dot{width:.6rem;height:.6rem;border-radius:50%;background:var(--faint);flex:none}
+body[data-status="running"] .pill{color:var(--accent);border-color:rgba(98,168,255,.45)}
+body[data-status="running"] .pill .dot{background:var(--accent);animation:blink 1.6s ease-in-out infinite}
+body[data-status="requires_action"] .pill{color:#231a00;background:var(--amber);border-color:var(--amber);animation:ring 1.4s ease-out infinite}
+body[data-status="requires_action"] .pill .dot{background:#231a00}
+body[data-status="idle"] .pill{color:var(--green);border-color:rgba(65,201,139,.45)}
+body[data-status="idle"] .pill .dot{background:var(--green)}
+body[data-status="error"] .pill{color:var(--red);border-color:rgba(255,107,112,.5)}
+body[data-status="error"] .pill .dot{background:var(--red)}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+@keyframes ring{0%{box-shadow:0 0 0 0 rgba(255,178,36,.55)}100%{box-shadow:0 0 0 14px rgba(255,178,36,0)}}
+
+main{flex:1;min-height:0;display:flex;flex-direction:column;width:100%;max-width:1120px;margin:0 auto;padding:0 1.7rem}
+
+/* ── the approval card ──────────────────────────────────────────────────── */
+#approval{flex:none;max-height:78vh;overflow:auto;padding:1.35rem 0 .35rem}
+#approval[hidden]{display:none}
+.card{
+  background:linear-gradient(180deg,#251d0d 0%,#1d1810 100%);
+  border:1px solid var(--amber);border-radius:14px;padding:1.7rem 1.9rem 1.6rem;
+  box-shadow:0 0 0 1px rgba(255,178,36,.22),0 0 48px rgba(255,178,36,.13),0 22px 60px rgba(0,0,0,.5);
+  animation:cardin .26s ease-out;
+}
+@keyframes cardin{from{opacity:0;transform:translateY(-12px)}to{opacity:1;transform:none}}
+.eyebrow{font-size:.69rem;font-weight:700;letter-spacing:.2em;text-transform:uppercase;color:var(--amber);margin-bottom:.5rem}
+.card h2{margin:0 0 1.15rem;font-size:1.65rem;line-height:1.18;font-weight:700;letter-spacing:-.015em}
+.lbl{margin:0 0 .4rem;font-size:.72rem;color:var(--dim);text-transform:uppercase;letter-spacing:.12em;font-weight:650}
+#apTool{
+  font-family:var(--mono);font-size:1.45rem;font-weight:600;color:var(--amber);
+  background:rgba(0,0,0,.38);border:1px solid rgba(255,178,36,.35);border-radius:9px;
+  padding:.55rem .95rem;display:inline-block;margin:0 0 1.2rem;word-break:break-all;
+}
+#apInput{
+  font-family:var(--mono);font-size:.86rem;line-height:1.62;color:#ffe9c4;tab-size:2;
+  background:rgba(0,0,0,.45);border:1px solid rgba(255,178,36,.22);border-radius:9px;
+  margin:0 0 1.3rem;padding:1rem 1.15rem;max-height:34vh;overflow:auto;
+  white-space:pre-wrap;word-break:break-word;
+}
+.actions{display:flex;gap:1rem;flex-wrap:wrap}
+.actions button{
+  font:inherit;cursor:pointer;border-radius:10px;border:1px solid transparent;
+  font-size:1.08rem;font-weight:700;padding:.95rem 3rem;letter-spacing:.01em;
+  transition:transform .06s ease,filter .15s ease,background .15s ease,opacity .15s ease;
+}
+.actions button:active{transform:translateY(1px)}
+.actions button:disabled{opacity:.45;cursor:default;transform:none}
+#btnApprove{background:var(--green);color:#062a1b}
+#btnApprove:hover:not(:disabled){filter:brightness(1.09)}
+#btnDeny{background:transparent;color:var(--red);border-color:rgba(255,107,112,.65)}
+#btnDeny:hover:not(:disabled){background:rgba(255,107,112,.12)}
+.reason{margin-top:1.05rem}
+.reason label{display:block;font-size:.73rem;color:var(--faint);margin-bottom:.35rem}
+.reason input{
+  width:100%;font:inherit;font-size:.92rem;color:var(--text);background:rgba(0,0,0,.35);
+  border:1px solid var(--line);border-radius:8px;padding:.62rem .85rem;outline:none;
+}
+.reason input:focus{border-color:var(--amber)}
+.reason input::placeholder{color:var(--faint)}
+#apResult{margin-top:1.2rem;font-size:1.08rem;font-weight:650}
+#apResult.ok{color:var(--green)}
+#apResult.no{color:var(--red)}
+.hint{margin:1.15rem 0 0;font-size:.73rem;color:var(--faint)}
+.hint code{color:var(--dim)}
+
+/* ── the event feed ─────────────────────────────────────────────────────── */
+#feedwrap{flex:1;min-height:0;display:flex;flex-direction:column;padding-top:1.15rem}
+.feedhead{flex:none;font-size:.68rem;font-weight:700;letter-spacing:.2em;text-transform:uppercase;color:var(--faint);
+  padding:0 .15rem .6rem;border-bottom:1px solid var(--line)}
+#feed{flex:1;min-height:0;overflow-y:auto;padding:1.05rem .15rem 2.6rem;scrollbar-width:thin;scrollbar-color:var(--line) transparent}
+#feed::-webkit-scrollbar{width:9px}
+#feed::-webkit-scrollbar-thumb{background:var(--line);border-radius:9px}
+#feed::-webkit-scrollbar-track{background:transparent}
+.row{display:grid;grid-template-columns:4.8rem minmax(0,1fr);gap:0 1.05rem;padding:.3rem 0}
+.gut{font-size:.64rem;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--faint);text-align:right;padding-top:.42em}
+.row.text .body{white-space:pre-wrap;overflow-wrap:anywhere;font-size:.97rem}
+.mono{font-family:var(--mono);font-size:.82rem}
+.row.tool .body{color:var(--dim);overflow-wrap:anywhere}
+.row.tool .tname{color:var(--accent);font-weight:600}
+.row.toolres .body{color:var(--faint)}
+.arrow{color:var(--faint)}
+.mark{border:1px solid var(--line);background:var(--surface);border-radius:8px;
+  padding:.6rem .95rem;margin:.5rem 0;font-size:.85rem;font-weight:600}
+.mark.wait{color:var(--amber);border-color:rgba(255,178,36,.4);background:rgba(255,178,36,.07);
+  text-transform:uppercase;letter-spacing:.07em;font-size:.73rem}
+.mark.ok{color:var(--green);border-color:rgba(65,201,139,.35);background:rgba(65,201,139,.06)}
+.mark.no{color:var(--red);border-color:rgba(255,107,112,.4);background:rgba(255,107,112,.06)}
+.mark.end{color:var(--dim);text-align:center;background:transparent;border-style:dashed;font-weight:500}
+.feed-empty{color:var(--faint);font-style:italic;padding:.55rem .15rem}
+
+footer{flex:none;display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap;
+  border-top:1px solid var(--line);background:var(--surface);padding:.55rem 1.7rem;
+  font-size:.69rem;color:var(--faint)}
+footer code{color:var(--dim)}
+
+/* Disconnected (run.py exited): keep everything rendered, mute the chrome.  */
+body.disconnected #statebar{background:var(--faint);animation:none;height:3px}
+body.disconnected header{background:var(--surface);border-bottom-color:var(--line)}
+body.disconnected .pill{color:var(--dim);background:var(--surface2);border-color:var(--line);animation:none}
+body.disconnected .pill .dot{background:var(--faint);animation:none}
+body.disconnected #feed,body.disconnected #approval{opacity:.9}
+
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
+@media (max-width:680px){
+  header{padding:.9rem 1rem}
+  main{padding:0 1rem}
+  footer{padding:.5rem 1rem}
+  .actions button{flex:1;padding:.95rem 1rem}
+}
+</style>
+</head>
+<body data-status="">
+<div id="statebar"></div>
+
+<header>
+  <div>
+    <h1>Agent Session <span class="sub">&middot; live human-in-the-loop view</span></h1>
+    <div class="ids">
+      <span><b>agent</b><code id="agentId">—</code></span>
+      <span><b>session</b><code id="sessionId">—</code></span>
+      <a id="consoleLink" class="off" href="#" target="_blank" rel="noopener noreferrer">open in platform console</a>
+    </div>
+  </div>
+  <div class="pill" aria-live="polite"><span class="dot"></span><span id="pillText">connecting…</span></div>
+</header>
+
+<main>
+  <section id="approval" hidden role="region" aria-live="assertive" aria-label="Human approval required">
+    <div class="card">
+      <div class="eyebrow">The agent has stopped and is waiting for a human</div>
+      <h2>Human approval required</h2>
+      <p class="lbl">The agent wants to call</p>
+      <div id="apTool">—</div>
+      <p class="lbl">With exactly this input — nothing happens until you decide</p>
+      <pre id="apInput"></pre>
+      <div id="apActions" class="actions">
+        <button id="btnApprove" type="button">Approve</button>
+        <button id="btnDeny" type="button">Deny</button>
+      </div>
+      <div id="apReasonWrap" class="reason">
+        <label for="apReason">Optional note back to the agent — sent only with Deny</label>
+        <input id="apReason" type="text" autocomplete="off" spellcheck="false"
+               placeholder="e.g. wrong claimant — verify the policy number first">
+      </div>
+      <div id="apResult" hidden></div>
+      <p class="hint">Approve posts a <code>user.tool_confirmation</code> event back into the live session; the agent resumes on the same stream.</p>
+    </div>
+  </section>
+
+  <section id="feedwrap">
+    <div class="feedhead">Session events</div>
+    <div id="feed"></div>
+  </section>
+</main>
+
+<footer>
+  <span>Served locally by <code>run.py --ui</code> on 127.0.0.1 — the API key stays in that process and never reaches this page.</span>
+  <span id="net">connecting…</span>
+</footer>
+
+<noscript><p style="padding:1rem 1.7rem">This page needs JavaScript. It only ever talks to 127.0.0.1.</p></noscript>
+
+<script>
+"use strict";
+(function () {
+  var POLL_MS = 700;
+  var lastRev = -1;      // skip DOM work when /state hasn't changed
+  var cardKey = null;    // identity of the approval card currently rendered
+  var answered = false;  // a decision has been clicked for cardKey
+  var inflight = false;  // never overlap /state polls
+  var fails = 0;
+  var everOk = false;
+
+  function $(id) { return document.getElementById(id); }
+
+  // All event-derived strings enter the DOM via textContent — never innerHTML.
+  function el(tag, cls, text) {
+    var n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text !== undefined && text !== null) n.textContent = String(text);
+    return n;
+  }
+
+  var PILL_TEXT = {
+    running: "running",
+    requires_action: "waiting for your approval",
+    idle: "idle",
+    error: "error"
+  };
+
+  function setStatus(status) {
+    document.body.setAttribute("data-status", status || "");
+    $("pillText").textContent = PILL_TEXT[status] || (status || "connecting…");
+  }
+
+  function renderHeader(s) {
+    $("agentId").textContent = s.agent || "—";
+    $("sessionId").textContent = s.session || "—";
+    var a = $("consoleLink");
+    if (s.console) { a.href = s.console; a.classList.remove("off"); }
+  }
+
+  function renderFeed(feed) {
+    var box = $("feed");
+    var near = (box.scrollHeight - box.scrollTop - box.clientHeight) < 90;
+    box.textContent = "";
+    if (!feed.length) {
+      box.appendChild(el("div", "feed-empty", "waiting for the first event from the session…"));
+      return;
+    }
+    for (var i = 0; i < feed.length; i++) {
+      var f = feed[i], row, b;
+      if (f.kind === "text") {
+        row = el("div", "row text");
+        row.appendChild(el("div", "gut", "agent"));
+        row.appendChild(el("div", "body", f.text || ""));
+        box.appendChild(row);
+      } else if (f.kind === "tool_use") {
+        row = el("div", "row tool");
+        row.appendChild(el("div", "gut", "tool"));
+        b = el("div", "body mono");
+        b.appendChild(el("span", "arrow", "→ "));
+        b.appendChild(el("span", "tname", f.name || "?"));
+        b.appendChild(el("span", null, "  " + (f.preview || "")));
+        row.appendChild(b);
+        box.appendChild(row);
+      } else if (f.kind === "tool_result") {
+        row = el("div", "row toolres");
+        row.appendChild(el("div", "gut", ""));
+        row.appendChild(el("div", "body mono",
+          "← result (" + Number(f.chars || 0).toLocaleString() + " chars)"));
+        box.appendChild(row);
+      } else if (f.kind === "approval_request") {
+        box.appendChild(el("div", "mark wait",
+          "paused — human approval requested: " + (f.name || "")));
+      } else if (f.kind === "decision") {
+        if (f.decision === "approve") {
+          box.appendChild(el("div", "mark ok", "approved — agent resuming"));
+        } else {
+          box.appendChild(el("div", "mark no", "denied" + (f.reason ? " — " + f.reason : "")));
+        }
+      } else if (f.kind === "status") {
+        box.appendChild(el("div", "mark end", f.text || ""));
+      } else if (f.kind === "error") {
+        box.appendChild(el("div", "mark no", f.text || ""));
+      }
+    }
+    if (near) box.scrollTop = box.scrollHeight;
+  }
+
+  function showButtons(on) {
+    $("apActions").hidden = !on;
+    $("apReasonWrap").hidden = !on;
+    $("btnApprove").disabled = !on;
+    $("btnDeny").disabled = !on;
+  }
+
+  // Only touches the DOM when the pending request's identity changes, so the
+  // card (its scroll position, the reason field, your text selection) is rock
+  // steady for as long as the agent is parked.
+  function syncApproval(p) {
+    var key = p ? (p.tool_use_id || p.name || "pending") : null;
+    if (key === cardKey) return;
+    cardKey = key;
+    answered = false;
+    var sec = $("approval");
+    if (!p) { sec.hidden = true; return; }
+    $("apTool").textContent = p.name || "(unnamed tool)";
+    // Full, pretty-printed, never truncated: this is the exact change being authorized.
+    $("apInput").textContent = JSON.stringify(p.input === undefined ? {} : p.input, null, 2);
+    $("apInput").scrollTop = 0;
+    $("apReason").value = "";
+    var res = $("apResult");
+    res.hidden = true; res.textContent = ""; res.className = "";
+    showButtons(true);
+    sec.hidden = false;
+  }
+
+  function decide(decision) {
+    if (answered || !cardKey) return;
+    answered = true;
+    showButtons(false);
+    var res = $("apResult");
+    res.className = decision === "approve" ? "ok" : "no";
+    res.textContent = decision === "approve"
+      ? "approved — agent resuming…"
+      : "denied — telling the agent…";
+    res.hidden = false;
+    var body = { decision: decision };
+    if (decision === "deny") {
+      var r = $("apReason").value.trim();
+      if (r) body.reason = r;
+    }
+    fetch("/approve", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    }).then(function (r) { return r.json(); }).then(function (j) {
+      if (j && j.error) {
+        res.className = "no";
+        res.textContent = "not submitted: " + j.error;
+        answered = false;
+        showButtons(true);
+      }
+      // On success the SSE thread clears `pending`; the card collapses on the
+      // next poll. The feed keeps the approved/denied record.
+    }).catch(function () {
+      res.className = "no";
+      res.textContent = "could not reach run.py — is it still running?";
+      answered = false;
+      showButtons(true);
+    });
+  }
+
+  function poll() {
+    if (inflight) return;
+    inflight = true;
+    fetch("/state", { cache: "no-store" }).then(function (r) {
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return r.json();
+    }).then(function (s) {
+      everOk = true;
+      fails = 0;
+      document.body.classList.remove("disconnected");
+      $("net").textContent = "live · polling /state";
+      if (s.rev !== lastRev) {       // nothing changed -> no DOM churn
+        lastRev = s.rev;
+        renderHeader(s);
+        renderFeed(s.feed || []);
+      }
+      setStatus(s.status);
+      syncApproval(s.pending || null);
+    }).catch(function () {
+      fails++;
+      if (!everOk) { $("pillText").textContent = "connecting…"; return; }
+      if (fails >= 3) {
+        // run.py exited (or the laptop slept). Keep everything on screen.
+        document.body.classList.add("disconnected");
+        $("pillText").textContent = "disconnected";
+        $("net").textContent = "disconnected — run.py has exited; this is the final state";
+      }
+    }).then(function () { inflight = false; });
+  }
+
+  $("btnApprove").addEventListener("click", function () { decide("approve"); });
+  $("btnDeny").addEventListener("click", function () { decide("deny"); });
+
+  poll();
+  setInterval(poll, POLL_MS);
+})();
+</script>
+</body>
+</html>

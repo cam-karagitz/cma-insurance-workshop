@@ -1,0 +1,306 @@
+# =============================================================================
+# SERVICE PILLAR — LAPSE QUEUE  ("the Retention agent")
+#   single agent · three read-only MCP servers · NO memory store (v1)
+#   · outcomes rubric · ONE gated action behind human approval, EVERY time
+# =============================================================================
+# This example is a customer sentence, decomposed:
+#
+#   "An agent that FINDS HOUSEHOLDS ABOUT TO LAPSE FOR NON-PAYMENT and gets
+#    the URGENT ones IN FRONT OF THEIR AGENT."  — the retention/service lead
+#
+#   "about to lapse for non-payment" →  billing `get_delinquencies` IS the
+#                                       population. Every account it returns
+#                                       is in the queue. None silently drop.
+#   "the real story for each"        →  three systems, least privilege each:
+#                                       billing  = how far gone
+#                                       policy   = what this family LOSES
+#                                       crm      = who their agent is, and
+#                                                  has anyone called already
+#   "in front of their agent"        →  crm `escalate_to_agent` — the ONE
+#                                       thing this agent can DO, and a human
+#                                       approves EVERY SINGLE ONE.
+#
+# ⚠️  KEY LESSON #1 — DENY-BY-DEFAULT × THREE SERVERS.
+#   The crm mock has two REAL write tools: `update_contact_info` and
+#   `escalate_to_agent`. policy-admin has `request_id_card` and
+#   `endorse_policy`. Under a blocklist, any of them you forgot to name is
+#   silently callable. Under the allowlists below, update_contact_info,
+#   request_id_card, and endorse_policy are UNREACHABLE — not named, not
+#   callable — and escalate_to_agent is reachable only THROUGH A HUMAN.
+#   That sentence is this file's whole reason to exist.
+#
+# ⚠️  KEY LESSON #2 — ONE GATED TOOL, MANY APPROVALS.
+#   `always_ask` is per-CALL, not per-session. This agent may attempt
+#   escalate_to_agent once per URGENT household, and the session PARKS at
+#   `requires_action` for EACH ONE — the human approves escalations one at a
+#   time, by name. run.py shows each pending call and waits (add `--ui` to
+#   put the Approve card in a browser). "A human must approve every single
+#   escalation" is not a system prompt promise; it is this one line of YAML.
+#
+#   v1 mounts NO memory store. When the retention team wants the agent held
+#   to a written save-script / retention playbook, that is a READ-ONLY memory
+#   store at session create — see claims/next-best-action.yaml.
+#
+# Maps to:  POST https://api.anthropic.com/v1/agents
+# Headers:  x-api-key / anthropic-version: 2023-06-01 /
+#           anthropic-beta: managed-agents-2026-04-01
+# =============================================================================
+
+name: lapse-queue
+
+model: claude-opus-4-8
+
+# -----------------------------------------------------------------------------
+# SYSTEM PROMPT
+# The output contract is exact — path and `##` headings verbatim — because the
+# outcomes grader (lapse-queue-rubric.md) sees ONLY the artifact. Note the two
+# rules that look redundant and are not: every household APPEARS in the queue
+# (completeness), and a recently-contacted household appears as HOLD and is
+# never recommended for new contact (the no-double-call rule). Both, always.
+# -----------------------------------------------------------------------------
+system: |
+  You are the Retention team's Lapse Outreach assistant. Every morning a
+  human retention lead has to decide which delinquent households get a call
+  today, in what order, and which ones the household's own agent needs to
+  hear about before close of business. You do that first pass. The retention
+  lead — and the household's agent — decide.
+
+  Workflow:
+    1. THE WINDOW. Call billing get_delinquencies. The accounts it returns
+       ARE your population for this run — every one of them appears in your
+       queue, no exceptions, no silent drops. Record how many it returned;
+       you will prove that count at the end.
+    2. PER HOUSEHOLD, pull exactly what you need to tell its real story:
+         - billing get_billing_account            — how far gone: the amount
+           past due, days delinquent, and the date coverage actually lapses
+         - policy-admin get_policies_by_household — the size of the save:
+           how many policies, and the total annual premium at risk
+         - policy-admin get_coverage_summary      — what this family LOSES
+           on that date, in plain words. That is the talking point.
+         - crm get_household                      — who their agent is, and
+           how the household prefers to be reached
+         - crm get_activities                     — has ANYONE touched them
+           recently? You MUST check this for every household before you
+           recommend any outreach. RECENT means within the last 7 days
+           unless the run instruction names a different lookback.
+    3. THE QUEUE. Write /mnt/session/outputs/lapse-queue.md with EXACTLY
+       these three `##` headings, in this order, verbatim:
+
+       ## Outreach Queue
+         One entry per delinquent household, ORDERED most urgent first.
+         EVERY entry must contain ALL of these labeled lines:
+           - HOUSEHOLD    : household id, named insured, and their AGENT by
+                            name (from crm get_household)
+           - HOW FAR GONE : amount past due, days delinquent, and the lapse
+                            date — from billing. Never estimated.
+           - AT RISK      : policy count and total annual premium, then the
+                            coverages this household loses, in plain words
+           - LAST CONTACT : the most recent crm activity — date, channel,
+                            who. If get_activities returned nothing in the
+                            lookback, write exactly NO RECENT CONTACT ON
+                            FILE. Never skip this line; never assume.
+           - OUTREACH     : ONE channel (the household's preferred channel
+                            if CRM has one) and a 1–2 sentence talking point
+                            built from THIS household's facts above — what
+                            they lose, by when, and what fixes it. Never a
+                            generic script. If LAST CONTACT is inside the
+                            lookback, this line is exactly
+                            "HOLD — contacted <date> by <who>; do not
+                            double-call" and nothing else.
+           - URGENCY      : URGENT / STANDARD / HOLD, with the one-line
+                            reason in the data. URGENT means a same-day call
+                            from this household's OWN agent is warranted:
+                            nearest to its lapse date, the most coverage and
+                            premium at risk, and nobody already on it. Never
+                            mark URGENT without naming the days to lapse and
+                            what is lost. If you cannot establish a lapse
+                            date from billing, it is not URGENT.
+
+       ## Escalations
+         The URGENT households only — each with the agent it routes to and
+         the one sentence that agent needs. This section is the worklist for
+         step 4. If nothing is urgent, write exactly: No same-day
+         escalations. An empty section is a valid, correct answer.
+
+       ## Completeness Check
+         Three lines: how many accounts billing get_delinquencies returned,
+         how many entries are in your Outreach Queue, and the word MATCH —
+         or, if they differ, every account you could not resolve, listed and
+         marked UNRESOLVED. You never silently drop one.
+
+    4. ACTION — ONE TOOL, AND IT IS GATED. The only action you can execute
+       yourself is crm escalate_to_agent: only AFTER lapse-queue.md is
+       written, and only for households you marked URGENT in it. EVERY call
+       parks the session for a human's approval; that pause is correct
+       behavior, not an error. One call per urgent household, never twice
+       for the same one, never for a STANDARD or HOLD entry. If an
+       escalation is denied, record the denial and move on — do not retry
+       it and do not try to work around the gate. Everything else in your
+       queue is a recommendation for a human; you never execute it.
+
+  Hard rules:
+    - You RECOMMEND; the retention lead and the household's agent DECIDE.
+      Every outreach in the queue is a recommendation, and the document
+      must say so.
+    - Cite the system each fact came from, or say you have none. Never
+      invent an amount, a date, a policy, or a prior contact a tool did not
+      return. NOT ON FILE is always a better answer than a guess.
+    - A household someone reached inside the lookback is HOLD. No
+      exceptions, however far gone — note the urgency for the lead, but do
+      not recommend contact and do not escalate it. Nobody gets called
+      twice because of you.
+    - Never use protected-class attributes, or proxies for them, in any
+      prioritization, urgency, or escalation reasoning.
+    - End lapse-queue.md with the line:
+        DRAFT — Retention Manager Review Required
+
+description: >-
+  Each morning, builds the retention team's prioritized lapse-outreach queue:
+  every delinquent household, how far gone, what coverage and premium the
+  household would lose, who their agent is, and whether anyone already reached
+  out — then routes the genuinely urgent ones to the household's own agent,
+  with every escalation gated behind a human's approval.
+
+# -----------------------------------------------------------------------------
+# TOOLS — every mcp_toolset is deny-by-default with an explicit allowlist.
+# Three systems, and on each one the MINIMUM reads the job needs. The grant
+# set IS the agent: billing finds them, policy-admin sizes the save, crm
+# names their agent and proves nobody double-calls — and crm holds the one
+# thing this agent can DO.
+# -----------------------------------------------------------------------------
+tools:
+
+  # Built-ins: write/edit to produce and revise the queue; read so it can
+  # re-check its own draft before it declares done. NO grep/glob — there is
+  # no mounted manual to search (v1 has no memory store). NO bash — this
+  # agent reads CRM activity notes, which are untrusted inbound text, and a
+  # retention reviewer never shells out.
+  - type: agent_toolset_20260401
+    default_config:
+      enabled: false
+    configs:
+      - { name: read,  enabled: true }
+      - { name: write, enabled: true }   # emit /mnt/session/outputs/lapse-queue.md
+      - { name: edit,  enabled: true }
+
+  # Billing — THE POPULATION. get_delinquencies is the queue itself; the
+  # per-account drill-down answers "how far gone, and when does it lapse".
+  # NOT granted: get_payment_history (the line-item ledger adds nothing to
+  # a lapse triage) and get_invoice_schedule (the forward billing calendar
+  # is not the delinquency story). billing has no write tools at all.
+  - type: mcp_toolset
+    mcp_server_name: billing
+    default_config:
+      enabled: false
+      permission_policy: { type: always_allow }
+    configs:
+      - { name: get_delinquencies,   enabled: true }   # ← "about to lapse for non-payment"
+      - { name: get_billing_account, enabled: true }   # how far gone / lapse date
+
+  # The policy system — what the household actually LOSES if it lapses.
+  # Policy count and premium size the save; the coverage summary is the
+  # talking point. NOT granted: get_policy / get_property_detail /
+  # get_documents / get_renewal_pipeline (none of them are the lapse story),
+  # and the writes — request_id_card, endorse_policy — are UNREACHABLE.
+  - type: mcp_toolset
+    mcp_server_name: policy-admin
+    default_config:
+      enabled: false
+      permission_policy: { type: always_allow }
+    configs:
+      - { name: get_policies_by_household, enabled: true }   # policy count + premium at risk
+      - { name: get_coverage_summary,      enabled: true }   # what this family loses
+
+  # CRM — who their agent is, and the no-double-call check. This is the
+  # toolset where the allowlist matters MOST: it is the one server here
+  # with reachable-in-principle writes, and it holds untrusted inbound text
+  # (rep notes, web forms). NOT granted: search_households and
+  # get_book_of_business — this agent's population comes from billing, and
+  # a queue worker has no business browsing the whole book. NOT granted:
+  # update_contact_info, the mock's OTHER real write. Unreachable.
+  - type: mcp_toolset
+    mcp_server_name: crm
+    default_config:
+      enabled: false
+      permission_policy: { type: always_allow }
+    configs:
+      - { name: get_household,  enabled: true }   # the household's AGENT + contact prefs
+      - { name: get_activities, enabled: true }   # has anyone already reached out?
+      # The ONE gated action. A human is approving: "put THIS delinquent
+      # household in front of THEIR agent, today." The session parks at
+      # requires_action for EVERY call — one approval per escalation.
+      - { name: escalate_to_agent, enabled: true, permission_policy: { type: always_ask } }
+      # …and any tool your real CRM adds later arrives DISABLED.
+
+mcp_servers:
+  - { type: url, name: billing,      url: https://ins-mocks.vercel.app/billing/mcp }        # Workshop mock — replace with your endpoint
+  - { type: url, name: policy-admin, url: https://ins-mocks.vercel.app/policy-admin/mcp }   # Workshop mock — replace with your endpoint
+  - { type: url, name: crm,          url: https://ins-mocks.vercel.app/crm/mcp }            # Workshop mock — replace with your endpoint
+
+# -----------------------------------------------------------------------------
+# METADATA — free-form key/value (≤512 chars/value). Convention only.
+# -----------------------------------------------------------------------------
+metadata:
+  owner:    <YOUR_TEAM_NAME>
+  workflow: lapse-queue
+  role:     single-agent
+  category: service
+
+# =============================================================================
+# DEPLOY + RUN — no memory store in v1; the rubric rides on `--rubric`
+# =============================================================================
+# 1. python3 deploy.py --dry-run examples/service/lapse-queue.yaml
+#      That JSON IS the POST /v1/agents body. Read it once — it is the whole
+#      lesson of this kit. Then drop --dry-run to actually create it → agt_…
+# 2. python3 run.py --agent agt_... --ui \
+#        --rubric examples/service/lapse-queue-rubric.md \
+#        "Build this morning's lapse outreach queue. Lookback for recent contact: 7 days."
+#
+#    NO --readonly-store and NO --memory-store: v1 mounts nothing. When the
+#    retention team wants this agent held to a written save script or
+#    retention playbook, that playbook is a READ-ONLY memory store mounted
+#    at session create — see claims/next-best-action.yaml ("trained on the
+#    manual") and docs/memory-best-practices.md. The agent reads the
+#    playbook; it can never rewrite the playbook. Say that sentence in the
+#    room; it is the governance line.
+#
+# 3. THE RUBRIC. examples/service/lapse-queue-rubric.md is the retention /
+#    service MANAGER's quality bar, written in English, and they own it.
+#    `--rubric <that file>` (already in the command above) attaches it:
+#    run.py sends the kickoff as ONE `user.define_outcome` event carrying
+#    both the instruction and the rubric, and prints the grader's
+#    `outcome.result` score when it lands. (The rubric is NOT a session
+#    resource — memory stores are; rubrics are not.) Either way the grader
+#    sees ONLY /mnt/session/outputs/lapse-queue.md — never the reasoning.
+#
+# 4. WHAT TO WATCH FOR ON THE STREAM (run.py prints all of this):
+#      agent.* …                  the queue being built — billing first
+#      agent.mcp_tool_use         escalate_to_agent with
+#                                   `evaluated_permission: "ask"`, NO result
+#      session.status_idle        with stop_reason {type: "requires_action",
+#        ← THE HUMAN MOMENT         event_ids: [<that call's sevt_… id>]}.
+#                                   The session is PARKED. run.py shows the
+#                                   full pending call — which household,
+#                                   which agent, why — and waits for y/n
+#                                   (the Approve button under --ui), POSTs
+#                                   the `user.tool_confirmation`, and the
+#                                   SAME stream resumes. It does NOT exit
+#                                   here — never treat a bare
+#                                   session.status_idle as "done"; check
+#                                   stop_reason.type first.
+#                                   ↺ EXPECT THIS MORE THAN ONCE: one park
+#                                   per URGENT household, each one approved
+#                                   or denied individually, by a person.
+#      session.status_idle        with stop_reason end_turn — DONE:
+#                                   lapse-queue.md is in /mnt/session/outputs/
+#      outcome.result             the grader's score against the rubric
+#
+# 5. SWAP IN YOUR REAL SYSTEMS. The three `url:` lines above are all that
+#    point this at the workshop mocks. Point billing at your BillingCenter,
+#    crm at your Salesforce, policy-admin at your PolicyCenter — then
+#    REBUILD each allowlist from YOUR server's tools/list (MCP-SERVERS.md
+#    has the curl) and re-run
+#      python3 validate.py examples/service/lapse-queue.yaml
+#    Deny-by-default means a wrong tool name fails CLOSED and SILENTLY;
+#    validate.py is the only thing that tells you.
+# =============================================================================

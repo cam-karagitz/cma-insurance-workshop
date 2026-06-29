@@ -9,10 +9,13 @@
 #     /mnt/session/outputs/ — nothing from chat, nothing from scratch space
 #
 # ⚠️  KEY LESSON OF THIS EXAMPLE:
-#   Outcomes, like memory stores, are NOT a field on the agent config. The
-#   rubric attaches at SESSION-CREATE time via `resources[]`. So this YAML
-#   looks like a plain single agent — the entire self-learning loop lives in
-#   the DEPLOY/RUN footer. The rubric markdown itself is a sibling file:
+#   The rubric is NOT a field on the agent config, and it is NOT a
+#   session-create resource either: it is sent as the run's KICKOFF — one
+#   `user.define_outcome` event that carries BOTH the instruction and the
+#   rubric (`run.py --rubric <file>` does this for you, and prints the
+#   grader's `outcome.result` score when it lands). So this YAML looks like a
+#   plain single agent — the entire self-learning loop lives in the DEPLOY/RUN
+#   footer. The rubric markdown itself is a sibling file:
 #   renewal-retention-rubric.md. Write the rubric FIRST; it is the spec the
 #   agent is built against, not an afterthought.
 #
@@ -155,18 +158,19 @@ metadata:
 # 2. POST /v1/agents        (this file as JSON)                  → agt_...
 # 3. POST /v1/environments  {"name":"renewal-retention"}         → env_...
 #
-# 4. POST /v1/sessions  ← rubric + memory attach HERE, via resources[]:
+# 4. POST /v1/sessions  ← MEMORY attaches HERE via resources[]. The RUBRIC
+#    does NOT: it is sent as the run's KICKOFF (step 6) — one
+#    `user.define_outcome` event carrying both the instruction and the rubric.
+#    The one-line version of this whole footer:
+#        python3 run.py --agent agt_… --memory-store memstore_… \
+#            --rubric examples/sales/renewal-retention-rubric.md \
+#            "Renewal review: policy <ID>"
+#    run.py sends the define_outcome kickoff, attaches the memory store, and
+#    prints the grader's `outcome.result` score when it lands.
 #    {
 #      "agent": "agt_...",
 #      "environment_id": "env_...",
 #      "resources": [
-#
-#        # 4a — OUTCOMES: the grader runs after `session.idle`, reads ONLY
-#        #      /mnt/session/outputs/**, scores against the rubric, and emits
-#        #      an `outcome.result` event {score, per-criterion, rationale}.
-#        { "type": "outcome",
-#          "rubric": "<contents of renewal-retention-rubric.md>",
-#          "grader_model": "claude-opus-4-8" },
 #
 #        # 4b — MEMORY: read/write store. The `instructions` string IS the
 #        #      memory system — without it the agent ignores the mount.

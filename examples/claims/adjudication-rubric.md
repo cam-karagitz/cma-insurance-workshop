@@ -3,15 +3,20 @@
 > The grader sees **only** files under `/mnt/session/outputs/` — never the
 > agent's reasoning or conversation. Grade the artifact, not the process.
 
-Attach at session-create alongside the agent (see footer of `adjudication.yaml`):
+Attach it with one flag — `run.py` sends it as the kickoff:
 
-```json
-"resources": [{
-  "type": "outcome",
-  "rubric": "<contents of this file>",
-  "output_glob": "/mnt/session/outputs/**"
-}]
+```bash
+python3 run.py --agent agt_… --rubric examples/claims/adjudication-rubric.md \
+  "Adjudicate claim CLM-2026-0412."
 ```
+
+(Under the hood that one flag sends a single `user.define_outcome` event carrying
+BOTH the instruction and this rubric — `{"type":"user.define_outcome",
+"description":"<the instruction>","rubric":{"type":"text","content":"<this
+file>"},"max_iterations":5}` — the same call the operations console makes. The
+rubric is **not** a session-create `resources[]` entry, and it is a nested
+object, not a bare string. When the grader finishes, `run.py` prints the
+`outcome.result` score.)
 
 Each criterion scores **0 / 1 / 2**. Max 10. Production bar: **≥ 8**.
 
