@@ -106,26 +106,34 @@ tools:
       - { name: write, enabled: true }   # risk.md + offer.md
       - { name: edit,  enabled: true }   # lets the agent revise after self-review
 
-  # Policy admin — read-only. Override always_ask → always_allow per server.
+  # Policy admin — read-only, DENY-BY-DEFAULT. (Override always_ask →
+  # always_allow per server, or calls stall at requires_action.) The agent
+  # never endorses, cancels, applies a discount, or changes a renewal —
+  # the rep does. None of those tools are named below, so none are callable;
+  # a blocklist fails open, this fails closed.
   - type: mcp_toolset
     mcp_server_name: policy-admin
     default_config:
-      enabled: true
+      enabled: false
       permission_policy: { type: always_allow }
     configs:
-      - { name: endorse_policy,  enabled: false }
-      - { name: cancel_policy,   enabled: false }
-      - { name: apply_discount,  enabled: false }   # rep applies it, not the agent
-      - { name: change_renewal,  enabled: false }
+      - { name: get_renewal_pipeline,      enabled: true }   # the renewal book — this agent's core read
+      - { name: get_policy,                enabled: true }   # expiring vs renewal premium
+      - { name: get_policies_by_household, enabled: true }   # multi-policy → bundle offers
+      - { name: get_coverage_summary,      enabled: true }
 
   # Market intel — competitor rate signals, territory trends. Read-only.
+  # No workshop mock for this one — same deny-by-default + allowlist
+  # template; rename to the read surface of YOUR market-intel server.
   - type: mcp_toolset
     mcp_server_name: market-intel
     default_config:
-      enabled: true
+      enabled: false
       permission_policy: { type: always_allow }
     configs:
-      - { name: refresh_index, enabled: false }   # admin/batch tool — not for agents
+      - { name: get_competitor_rates, enabled: true }
+      - { name: get_churn_signals,    enabled: true }
+      # `refresh_index` (admin/batch) is unreachable without being named.
 
 mcp_servers:
   - { type: url, name: policy-admin, url: https://ins-mocks.vercel.app/policy-admin/mcp }

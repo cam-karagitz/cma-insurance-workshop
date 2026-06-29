@@ -26,8 +26,8 @@ tools:
     configs: [{name: read, enabled: true}, {name: grep, enabled: true}]
   - type: mcp_toolset
     mcp_server_name: claims-admin
-    default_config: { enabled: true, permission_policy: {type: always_allow} }  # see gotcha #2
-    configs: [{name: file_fnol, enabled: false}]   # blocklist write tools
+    default_config: { enabled: false, permission_policy: {type: always_allow} } # see gotchas #2 + #4
+    configs: [{name: get_claim, enabled: true}]    # allowlist the reads; everything else is denied
 mcp_servers:
   - { type: url, name: claims-admin, url: https://YOUR-DOMAIN/mcp }
 multiagent:                               # orchestrators only — sub-agents must exist first
@@ -51,6 +51,7 @@ metadata: { owner: <you>, workflow: <name>, role: Orchestrator|Reader|Writer }  
 1. **Open the SSE stream BEFORE posting the first event.** Session-create only provisions the container; nothing runs until an event arrives, and POST-before-stream means you miss early `agent.*` events. This is the #1 failure mode.
 2. **MCP toolsets default to `permission_policy: always_ask`** (built-in `agent_toolset` defaults to `always_allow`). Forget to override and the session stalls at `stop_reason: requires_action`. Fix: set `default_config.permission_policy: {type: always_allow}` on every `mcp_toolset`.
 3. **`user.message.content` must be an array of content blocks**, not a bare string. Also: agent updates require `{"version": N, …}` in the body (optimistic concurrency); the roster field is `multiagent` — older `callable_agents` is silently ignored.
+4. **MCP toolsets are allow-by-default (`default_config.enabled` defaults to `true`).** A blocklist of mutators therefore fails *open*: any write tool you didn't know to name is silently callable, and real servers add tools over time. Every example in this kit sets `default_config.enabled: false` and **allowlists the reads** — the only direction that fails closed. Get the tool names from `tools/list` against your server; `MCP-SERVERS.md` has the curl recipe and the live tool inventory for every workshop mock.
 
 ## Architecture convention — 3-tier least-privilege
 
@@ -71,9 +72,9 @@ metadata: { owner: <you>, workflow: <name>, role: Orchestrator|Reader|Writer }  
      - `add-vehicle.yaml` — teaches: human-in-the-loop write — `always_ask` → handle `requires_action`
      - `household-review.yaml` — teaches: multi-agent — 3-tier orchestration (readers / writer)
    - **sales/**
-     - `quote-builder.yaml` — teaches: multiple MCP servers with per-tool blocklists
+     - `quote-builder.yaml` — teaches: multiple MCP servers, each with its own deny-by-default read allowlist
      - `renewal-retention.yaml` — teaches: outcomes rubric — agent self-grades its own output
-2. Edit the YAML; keep tool grants minimal per the 3-tier pattern above.
+2. Edit the YAML; keep tool grants minimal per the 3-tier pattern above, and keep every `mcp_toolset` on `default_config.enabled: false` + a read allowlist (gotcha #4) — never a mutator blocklist.
 3. Set `metadata.owner` / `workflow` / `role` — shared orgs fill fast and unlabeled agents get lost.
 4. `python deploy.py <file.yaml>` — creates the agent, prints `agt_...`. Then `python run.py --agent agt_... "<instruction>"` — creates a session, opens SSE, streams events. **deploy.py defines, run.py invokes.** In production, run.py becomes a webhook handler / cron / UI action.
    - **Verify what actually got deployed**: `GET /v1/agents/:id` returns the full config the API is holding — diff it against `deploy.py --dry-run <file.yaml>`. Since the API silently drops unknown fields (gotcha #3), this round-trip diff is how you catch a typo'd field name. Cleanup is `POST /v1/agents/:id/archive` (not DELETE — there is no DELETE).

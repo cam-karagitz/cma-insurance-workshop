@@ -96,19 +96,25 @@ tools:
   - type: mcp_toolset
     mcp_server_name: claims-admin
     default_config:
-      enabled: true                     # MCP toolsets are allow-by-default…
+      enabled: false                    # deny-by-default — same rule as the built-ins above
       permission_policy:
-        type: always_allow              # …but ASK-by-default. Override here.
+        type: always_allow              # MCP defaults to ASK; override or you hang
     configs:
-      # Then BLOCKLIST individual write tools for least-privilege.
-      # Triage is read-only against the claims system — it should never
-      # mutate a claim record. List every write-capable tool your MCP
-      # server exposes and disable it (any tool NOT named here is allowed):
-      - { name: file_fnol,       enabled: false }
-      - { name: update_reserve,  enabled: false }
-      - { name: assign_adjuster, enabled: false }
-      - { name: update_claim,    enabled: false }
-      - { name: close_claim,     enabled: false }
+      # ALLOWLIST the read tools triage needs. Anything not named here —
+      # including every write tool the server has, or ever grows — is denied.
+      #
+      # >>> Why allowlist, not blocklist? A blocklist fails OPEN: a mutator
+      # you didn't know to name is silently callable, and real MCP servers
+      # add tools over time. Deny-by-default fails CLOSED: a new tool
+      # arrives disabled until you opt it in. <<<
+      - { name: get_claim,               enabled: true }
+      - { name: get_claims_by_household, enabled: true }   # claims history → severity
+      - { name: get_claims_by_policy,    enabled: true }
+      - { name: get_open_claims,         enabled: true }   # adjuster-queue context
+      - { name: get_cat_event_claims,    enabled: true }   # is this loss part of a CAT?
+      # Triage NEVER mutates the claim system. `file_fnol` (the mock's one
+      # write) — and any mutator your real server exposes — stays denied
+      # because nothing made it `enabled: true`.
 
 # -----------------------------------------------------------------------------
 # MCP SERVERS — remote tool servers this agent can reach

@@ -91,28 +91,37 @@ tools:
       - { name: write, enabled: true }   # emit /mnt/session/outputs/endorsement-draft.md
       - { name: edit,  enabled: true }   # revise the draft after user feedback
 
-  # Policy administration system over MCP — MIXED permission policies.
-  # default_config grants always_allow to the READ tools so lookups don't
-  # stall; the per-tool override below flips endorse_policy to always_ask
-  # so the WRITE goes through a human.
+  # Policy administration system over MCP — MIXED permission policies,
+  # under DENY-BY-DEFAULT. The reads are allowlisted with always_allow so
+  # lookups don't stall; the per-tool override below flips endorse_policy
+  # to always_ask so the WRITE goes through a human. Every OTHER tool —
+  # cancel_policy, update_insured, anything your real server adds later —
+  # is denied because it isn't named. A blocklist fails open; this fails
+  # closed. See ../MCP-SERVERS.md.
   - type: mcp_toolset
     mcp_server_name: policy-admin
     default_config:
-      enabled: true
+      enabled: false
       permission_policy: { type: always_allow }   # reads flow freely…
     configs:
-      # …but the mutator requires explicit human approval EVERY call.
+      # Reads the agent needs to pull the policy and mirror its coverages:
+      - { name: get_policy,           enabled: true }
+      - { name: get_coverage_summary, enabled: true }
+      # rate_endorsement prices the change WITHOUT applying it (read-only).
+      # >>> DELIBERATE DEMO HOOK on the workshop mock: rating a vehicle with
+      # primary_use=business OR annual_mileage>25000 returns a non-null
+      # `referral`. The system prompt's "stop and route to underwriting"
+      # rule is a SECOND demonstrable human gate in this same lab. <<<
+      - { name: rate_endorsement,     enabled: true }
+
+      # …and the ONE mutator requires explicit human approval EVERY call.
       # This is the ONE place in the kit where always_ask is the right
-      # answer — the requires_action pause IS the feature.
+      # answer — the requires_action pause IS the feature. Live on the
+      # workshop mock: the full GATHER → RATE → PRESENT → PAUSE → APPLY
+      # loop runs end-to-end, and get_policy reflects the endorsement.
       - name: endorse_policy
         enabled: true
         permission_policy: { type: always_ask }   # ← human-in-the-loop gate
-      # Other mutators this agent has no business calling — hard-disable:
-      - { name: cancel_policy,     enabled: false }
-      - { name: update_insured,    enabled: false }
-      - { name: issue_certificate, enabled: false }
-      # get_policy / rate_endorsement / lookup_vin inherit default_config
-      # (enabled: true, always_allow) — no entry needed.
 
 mcp_servers:
   - type: url

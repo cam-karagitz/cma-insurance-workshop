@@ -73,43 +73,50 @@ tools:
       - { name: grep, enabled: true }
       - { name: glob, enabled: true }
 
-  # Claims administration system — read-only. Allow-by-default + blocklist
-  # every mutator. (MCP toolsets default to permission_policy: always_ask;
-  # forget the override and the session stalls at requires_action.)
+  # Claims administration system — read-only. DENY-BY-DEFAULT + allowlist.
+  # (A blocklist fails open: a mutator you didn't know to name is silently
+  # callable. See claims/fnol-triage.yaml for the full reasoning.)
+  # MCP toolsets default to permission_policy: always_ask — override or
+  # the session stalls at requires_action.
   - type: mcp_toolset
     mcp_server_name: claims-admin
     default_config:
-      enabled: true
+      enabled: false
       permission_policy: { type: always_allow }
     configs:
-      - { name: update_claim,  enabled: false }
-      - { name: set_reserve,   enabled: false }
-      - { name: issue_payment, enabled: false }
-      - { name: close_claim,   enabled: false }
-      - { name: add_note,      enabled: false }
+      - { name: get_claim,               enabled: true }
+      - { name: get_claims_by_household, enabled: true }
+      - { name: get_claims_by_policy,    enabled: true }
+      - { name: get_open_claims,         enabled: true }
+      - { name: get_cat_event_claims,    enabled: true }
+      # No writes enabled → the reader CANNOT file an FNOL, set a reserve,
+      # or close a claim, no matter what hostile text it parses.
 
   # Policy administration system — read-only. Needed to confirm coverage was
   # in force and pull form/limit/deductible facts.
   - type: mcp_toolset
     mcp_server_name: policy-admin
     default_config:
-      enabled: true
+      enabled: false
       permission_policy: { type: always_allow }
     configs:
-      - { name: endorse_policy, enabled: false }
-      - { name: cancel_policy,  enabled: false }
-      - { name: update_insured, enabled: false }
+      - { name: get_policy,                enabled: true }
+      - { name: get_policies_by_household, enabled: true }   # other coverage that may respond
+      - { name: get_coverage_summary,      enabled: true }
+      - { name: get_property_detail,       enabled: true }
+      - { name: get_documents,             enabled: true }   # the policy form itself
 
   # Document repository — read-only. Estimates, photos, reports.
-  # No workshop mock exists for `documents`; for the lab we use claims-admin's
-  # get_loss_details as a proxy (see MCP-SERVERS.md). When you have a real
-  # document MCP, ADD it here and to mcp_servers below — uncomment:
+  # No workshop mock exists for `documents`. For the lab, claims-admin's
+  # `get_claim` already returns the loss description and the adjuster-notes
+  # timeline — enough to exercise the pattern (see MCP-SERVERS.md). When you
+  # have a real document MCP, ADD it here and to mcp_servers below:
   # - type: mcp_toolset
   #   mcp_server_name: documents
-  #   default_config: { enabled: true, permission_policy: { type: always_allow } }
+  #   default_config: { enabled: false, permission_policy: { type: always_allow } }
   #   configs:
-  #     - { name: upload_document, enabled: false }
-  #     - { name: delete_document, enabled: false }
+  #     - { name: get_document,     enabled: true }
+  #     - { name: list_attachments, enabled: true }
 
 mcp_servers:
   - { type: url, name: claims-admin, url: https://ins-mocks.vercel.app/claims-admin/mcp }

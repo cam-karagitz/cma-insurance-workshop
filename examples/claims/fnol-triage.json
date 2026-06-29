@@ -32,23 +32,31 @@
       "type": "mcp_toolset",
       "mcp_server_name": "claims-admin",
       "default_config": {
-        "enabled": true,
+        "enabled": false,
         "permission_policy": {
           "type": "always_allow"
         }
       },
       "configs": [
         {
-          "name": "update_claim",
-          "enabled": false
+          "name": "get_claim",
+          "enabled": true
         },
         {
-          "name": "assign_adjuster",
-          "enabled": false
+          "name": "get_claims_by_household",
+          "enabled": true
         },
         {
-          "name": "close_claim",
-          "enabled": false
+          "name": "get_claims_by_policy",
+          "enabled": true
+        },
+        {
+          "name": "get_open_claims",
+          "enabled": true
+        },
+        {
+          "name": "get_cat_event_claims",
+          "enabled": true
         }
       ]
     }

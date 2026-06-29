@@ -91,27 +91,29 @@ tools:
       - { name: glob,  enabled: true }   # list memory files
       - { name: write, enabled: true }   # emit /mnt/session/outputs/siu-screen.md
 
-  # Claims administration system — strictly read-only. The screener inspects
-  # the claim file and claimant history; it never touches the claim record.
+  # Claims administration system — read-only except the one gated referral.
+  # DENY-BY-DEFAULT, then allowlist. (A blocklist fails open: a mutator you
+  # didn't know to name is silently callable. See claims/fnol-triage.yaml.)
   # >>> MCP toolsets default to permission_policy: always_ask — forget the
   # override and the session stalls at stop_reason: requires_action. <<<
   - type: mcp_toolset
     mcp_server_name: claims-admin
     default_config:
-      enabled: true
+      enabled: false
       permission_policy: { type: always_allow }
     configs:
-      - { name: file_fnol,       enabled: false }   # blocklist mutators outright
-      - { name: update_reserve,  enabled: false }
-      - { name: assign_adjuster, enabled: false }
-      - { name: update_claim,    enabled: false }
-      - { name: set_reserve,     enabled: false }
-      - { name: add_note,        enabled: false }
-      - { name: close_claim,     enabled: false }
-      # refer_to_siu is the ONE write the agent may attempt — but it parks for
-      # human approval. Per-tool permission_policy override; everything else on
-      # this server inherits always_allow from default_config above.
-      - { name: refer_to_siu,  permission_policy: { type: always_ask } }
+      # The reads a screener needs:
+      - { name: get_claim,               enabled: true }
+      - { name: get_claims_by_household, enabled: true }   # claimant history — the core SIU signal
+      - { name: get_claims_by_policy,    enabled: true }
+      - { name: get_cat_event_claims,    enabled: true }   # opportunistic CAT fraud
+      # refer_to_siu is the ONE write the agent may attempt — explicitly
+      # enabled, but with a per-tool policy that PARKS the session for human
+      # approval. The pause is the feature. Live on the workshop mock, so the
+      # full screen → park → approve → referral-lands-on-get_claim loop runs
+      # end-to-end against ins-mocks. Idempotent: re-referring an already-
+      # referred claim returns the existing referral, never a duplicate.
+      - { name: refer_to_siu, enabled: true, permission_policy: { type: always_ask } }
       # On a REFER run the SSE stream emits `session.requires_action` with the
       # pending refer_to_siu call. Your client surfaces it; a human approves or
       # denies via `POST …/events {events:[{type:"user.tool_approval", …}]}`.
@@ -122,12 +124,15 @@ tools:
   - type: mcp_toolset
     mcp_server_name: policy-admin
     default_config:
-      enabled: true
+      enabled: false
       permission_policy: { type: always_allow }
     configs:
-      - { name: endorse_policy, enabled: false }
-      - { name: cancel_policy,  enabled: false }
-      - { name: update_insured, enabled: false }
+      - { name: get_policy,                enabled: true }   # inception / effective / endorsement dates
+      - { name: get_policies_by_household, enabled: true }   # lapse / rebind across the household
+      - { name: get_coverage_summary,      enabled: true }
+      - { name: get_documents,             enabled: true }
+      # Nothing else is enabled — so NO write on this server is reachable.
+      # You don't need to know `request_id_card` exists to be safe from it.
 
 mcp_servers:
   - { type: url, name: claims-admin, url: https://ins-mocks.vercel.app/claims-admin/mcp }   # Workshop mock — replace with your endpoint

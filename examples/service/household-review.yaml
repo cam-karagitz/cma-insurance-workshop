@@ -74,19 +74,24 @@ tools:
       - { name: grep, enabled: true }
       - { name: glob, enabled: true }
 
-  # Policy administration — read-only. Allow-by-default + blocklist mutators.
-  # (MCP toolsets default to permission_policy: always_ask; forget the
+  # Policy administration — read-only. DENY-BY-DEFAULT + allowlist the reads.
+  # (A blocklist fails open: a mutator you didn't name is silently callable.
+  # MCP toolsets default to permission_policy: always_ask; forget the
   # override and the session stalls at requires_action.)
   - type: mcp_toolset
     mcp_server_name: policy-admin
     default_config:
-      enabled: true
+      enabled: false
       permission_policy: { type: always_allow }
     configs:
-      - { name: endorse_policy,    enabled: false }
-      - { name: cancel_policy,     enabled: false }
-      - { name: update_insured,    enabled: false }
-      - { name: issue_certificate, enabled: false }
+      - { name: get_policies_by_household, enabled: true }   # the core call
+      - { name: get_policy,                enabled: true }
+      - { name: get_coverage_summary,      enabled: true }
+      - { name: get_renewal_pipeline,      enabled: true }   # recently lapsed / non-renewed
+      - { name: get_property_detail,       enabled: true }
+      - { name: get_documents,             enabled: true }
+      # No writes enabled. This reader cannot endorse, cancel, or mutate
+      # anything — no matter what its inputs convince it of.
 
 mcp_servers:
   - { type: url, name: policy-admin, url: https://ins-mocks.vercel.app/policy-admin/mcp }   # Workshop mock — replace with your endpoint
@@ -144,17 +149,28 @@ tools:
       - { name: grep, enabled: true }
       - { name: glob, enabled: true }
 
-  # CRM — read-only. Blocklist every mutator your CRM MCP exposes.
+  # CRM — read-only, DENY-BY-DEFAULT. This is the toolset where the
+  # allowlist-vs-blocklist choice matters MOST: the blast-radius story above
+  # is only true if the CONFIG enforces it. A blocklist of mutators fails
+  # OPEN — name one wrong and a poisoned CRM note can reach a real write
+  # (escalate, update a contact, open an opportunity). The allowlist fails
+  # CLOSED. Note we also scope the READS: this agent reviews ONE household,
+  # so it gets no cross-household search and no book-of-business view.
   - type: mcp_toolset
     mcp_server_name: crm
     default_config:
-      enabled: true
+      enabled: false
       permission_policy: { type: always_allow }
     configs:
-      - { name: create_opportunity, enabled: false }
-      - { name: update_contact,     enabled: false }
-      - { name: log_activity,       enabled: false }
-      - { name: send_campaign,      enabled: false }
+      - { name: get_household,     enabled: true }
+      - { name: get_activities,    enabled: true }   # contact history
+      - { name: get_life_events,   enabled: true }
+      - { name: get_opportunities, enabled: true }   # prior offers + dispositions
+      # NOT enabled — and therefore unreachable:
+      #   search_households, get_book_of_business  (cross-household reads a
+      #     single-household reader has no business making)
+      #   update_contact_info, escalate_to_agent   (the mock's REAL writes)
+      #   …and any tool your real CRM adds later.
 
 mcp_servers:
   - { type: url, name: crm, url: https://ins-mocks.vercel.app/crm/mcp }   # Workshop mock — replace with your endpoint

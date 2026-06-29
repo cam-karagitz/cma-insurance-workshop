@@ -3,16 +3,17 @@
 # =============================================================================
 # What this shows (everything from Example 01, plus):
 #   - THREE remote MCP servers on one agent, composed into a single workflow
-#   - Per-server tool blocklists (each server gets its own mcp_toolset entry)
-#   - A truly read-only agent against external systems: every MCP write tool
-#     is disabled; the only "write" is the sandbox quote file
+#   - Per-server DENY-BY-DEFAULT + read allowlists (each server gets its own
+#     mcp_toolset entry — there is no global MCP setting)
+#   - A truly read-only agent against external systems: only the read tools
+#     are enabled; every write — known or yet-to-exist — is denied
 #
 # ⚠️  KEY LESSON OF THIS EXAMPLE:
 #   Real workflows rarely live behind one system. A quote needs vehicle data
 #   (VIN decode), driver risk data (MVR/CLUE), AND a rating call — three
 #   different backends. Each gets its own `mcp_servers` entry AND its own
 #   `mcp_toolset` entry. The toolset is where you set the permission policy
-#   and blocklist mutators *per server* — there is no global MCP setting.
+#   and the tool allowlist *per server* — there is no global MCP setting.
 #
 # Maps to:  POST https://api.anthropic.com/v1/agents
 # Headers:  x-api-key / anthropic-version: 2023-06-01 /
@@ -83,46 +84,52 @@ tools:
       # No `edit`, no `bash` — one-shot quote generation needs neither.
 
   # --- MCP #1: Vehicle data (VIN decode, symbols, safety) --------------------
-  # Every mcp_toolset needs its OWN permission_policy override. There is no
-  # "set it once for all MCPs" — forget it on any one server and that server's
-  # calls stall at requires_action.
+  # Every mcp_toolset needs its OWN deny-by-default AND its OWN permission
+  # policy override. There is no "set it once for all MCPs". Forget the
+  # policy override on any one server → its calls stall at requires_action.
+  # Forget deny-by-default → you've inherited every tool that server
+  # exposes, including the ones you've never heard of.
   - type: mcp_toolset
     mcp_server_name: vehicle-data
     default_config:
-      enabled: true
+      enabled: false
       permission_policy: { type: always_allow }
     configs:
-      # vehicle-data is reference-only by nature, but block admin tools anyway:
-      - { name: update_vehicle_record, enabled: false }
-      - { name: override_symbol,       enabled: false }
+      # vehicle-data is reference-only by nature, but allowlist anyway — so
+      # `update_vehicle_record` / `override_symbol` (and whatever the vendor
+      # adds next quarter) never come along for the ride.
+      # ⬅ Rename to match the read tools YOUR vehicle-data server exposes.
+      - { name: decode_vin,        enabled: true }
+      - { name: get_symbol,        enabled: true }
+      - { name: get_safety_rating, enabled: true }
 
   # --- MCP #2: Driver history (MVR + CLUE reports) ---------------------------
   - type: mcp_toolset
     mcp_server_name: driver-history
     default_config:
-      enabled: true
+      enabled: false
       permission_policy: { type: always_allow }
     configs:
       # MVR/CLUE pulls are billable third-party orders. The "order_*" tools
-      # *create* a new chargeable inquiry — block them so the agent can only
-      # READ reports already on file for this prospect, not rack up fees.
-      - { name: order_mvr,       enabled: false }
-      - { name: order_clue,      enabled: false }
-      - { name: dispute_record,  enabled: false }
+      # CREATE a new chargeable inquiry. Because they are NOT named below,
+      # the agent can only READ reports already on file for this prospect —
+      # it cannot rack up fees. (Under a blocklist, a new billable order
+      # tool the vendor ships next month would be live by default.)
+      - { name: lookup_mvr,  enabled: true }
+      - { name: lookup_clue, enabled: true }
 
   # --- MCP #3: Rating engine -------------------------------------------------
   - type: mcp_toolset
     mcp_server_name: rating-engine
     default_config:
-      enabled: true
+      enabled: false
       permission_policy: { type: always_allow }
     configs:
       # `rate_risk` (read) returns a premium; `bind_quote` / `issue_policy`
-      # (write) would create a real contract. Quote builder must NEVER bind.
-      - { name: bind_quote,      enabled: false }
-      - { name: issue_policy,    enabled: false }
-      - { name: override_rate,   enabled: false }
-      - { name: apply_uw_credit, enabled: false }
+      # (write) would create a real contract. The quote builder must NEVER
+      # bind — and because ONLY rate_risk is enabled, it never can. The
+      # bind / issue / override tools aren't "blocked"; they're never granted.
+      - { name: rate_risk, enabled: true }
 
 # -----------------------------------------------------------------------------
 # MCP SERVERS — three separate streamable-HTTP endpoints

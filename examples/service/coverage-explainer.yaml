@@ -40,7 +40,8 @@ system: |
   English and cite the exact form + section every time.
 
   Workflow per question:
-    1. Pull the policy via the policy-admin tools (get_policy, get_forms).
+    1. Pull the policy via the policy-admin tools (get_policy,
+       get_coverage_summary, get_documents).
     2. If a memory store is mounted at /mnt/memory/coverage-patterns/, check
        it for a matching question pattern BEFORE drafting from scratch — its
        attachment instructions tell you how to use it.
@@ -86,15 +87,20 @@ tools:
   - type: mcp_toolset
     mcp_server_name: policy-admin
     default_config:
-      enabled: true
+      enabled: false                                # deny-by-default
       permission_policy: { type: always_allow }
     configs:
-      # Coverage explanation is strictly read-only against policy admin.
-      # Blocklist every mutator your server exposes:
-      - { name: endorse_policy,    enabled: false }
-      - { name: cancel_policy,     enabled: false }
-      - { name: update_insured,    enabled: false }
-      - { name: issue_certificate, enabled: false }
+      # Coverage explanation is strictly read-only against policy admin, so
+      # we ALLOWLIST the reads. Every tool NOT named here — including every
+      # mutator your server exposes, or ever grows — is denied.
+      #
+      # >>> Why allowlist, not blocklist? A blocklist fails OPEN: a write
+      # tool you didn't know to name is silently callable. Deny-by-default
+      # fails CLOSED: a new tool arrives disabled until you opt it in. <<<
+      - { name: get_policy,                enabled: true }
+      - { name: get_policies_by_household, enabled: true }
+      - { name: get_coverage_summary,      enabled: true }   # the answer usually lives here
+      - { name: get_documents,             enabled: true }   # form + section citations
 
 mcp_servers:
   - type: url
