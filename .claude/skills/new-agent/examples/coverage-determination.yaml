@@ -199,8 +199,8 @@ metadata:
 # =============================================================================
 # DEPLOY + RUN — the recommended lab claim is CLM-2026-0419
 # =============================================================================
-# 1. python deploy.py examples/claims/coverage-determination.yaml   → agt_...
-# 2. python run.py --agent agt_... "Determine coverage for claim CLM-2026-0419."
+# 1. python3 deploy.py examples/claims/coverage-determination.yaml   → agt_...
+# 2. python3 run.py --agent agt_... "Determine coverage for claim CLM-2026-0419."
 #    (add --ui to put the live run, and the approval gate in other labs, in a
 #     browser for the non-engineers in the room)
 #

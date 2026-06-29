@@ -21,8 +21,8 @@ Please complete these **before** the session — the first 30 minutes assume you
   Then run scripts as `.venv/bin/python3 deploy.py ...` (or `source .venv/bin/activate` first)
 - [ ] **Clone this repo**: `git clone https://github.com/cam-karagitz/cma-insurance-workshop && cd cma-insurance-workshop`
 - [ ] **Verify the kit**, two commands:
-  - `python deploy.py --dry-run examples/claims/fnol-triage.yaml` — prints a JSON request body, no errors (offline; proves the tooling works)
-  - `python validate.py` — must end with `PREFLIGHT CLEAN`. This one calls the **live** hosted mock servers and asserts every tool the examples grant actually exists there, so it doubles as proof that your network can reach the mocks.
+  - `python3 deploy.py --dry-run examples/claims/fnol-triage.yaml` — prints a JSON request body, no errors (offline; proves the tooling works)
+  - `python3 validate.py` — must end with `PREFLIGHT CLEAN`. This one calls the **live** hosted mock servers and asserts every tool the examples grant actually exists there, so it doubles as proof that your network can reach the mocks.
 - [ ] Confirm **outcomes** and **multiagent** are enabled on your org (separate from the managed-agents beta — ask your Anthropic contact). Labs 3+ depend on these.
 
 ## Recommended

@@ -199,8 +199,8 @@ metadata:
 #    it as a handful of markdown files. For the workshop, a seeded standards
 #    store already exists (severity tiers, escalation rules, billing holds,
 #    reserve guidelines) — ask the facilitator for its memstore_... id.
-# 2. python deploy.py examples/claims/next-best-action.yaml        → agt_...
-# 3. python run.py --agent agt_... \
+# 2. python3 deploy.py examples/claims/next-best-action.yaml        → agt_...
+# 3. python3 run.py --agent agt_... \
 #        --readonly-store memstore_<THE MANUAL>   \   # ← "trained on our SOPs"
 #        --memory-store   memstore_<ITS LEARNINGS> \  # ← optional, read_write
 #        --ui \

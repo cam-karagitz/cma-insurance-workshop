@@ -37,9 +37,19 @@ scripts ship with you, and every action you take goes through them.
 
 | | Path | Use it to |
 |---|---|---|
-| Scripts | `${CLAUDE_SKILL_DIR}/scripts/{deploy.py, run.py, validate.py}` | EXECUTE with `python3` — define, invoke, and prove. Never re-implement them. |
-| Live tool inventory | `${CLAUDE_SKILL_DIR}/references/mcp-servers.md` | READ — every hosted mock server, every real tool name, the curl to enumerate any server. |
-| Gold examples | `${CLAUDE_SKILL_DIR}/examples/` | READ and copy — `next-best-action.yaml` (single agent, one gated write, memory, rubric), `coverage-determination.yaml`, and `coverage-determination-rubric.md`. |
+| Scripts | `${CLAUDE_SKILL_DIR}/scripts/{deploy.py, run.py, validate.py}` (+ `ui.html`, which `run.py --ui` serves) | EXECUTE with `python3` — define, invoke, and prove. Never re-implement them. They need `pyyaml` (`pip install pyyaml`) and outbound HTTPS. |
+| Live tool inventory | `${CLAUDE_SKILL_DIR}/references/mcp-servers.md` | READ — every hosted mock server, every real tool name, and the `tools/list` curl (under "Verify any of them yourself"). |
+| Gold examples | `${CLAUDE_SKILL_DIR}/examples/` | READ and copy — `next-best-action.yaml` + `next-best-action-rubric.md` (single agent, one gated write, memory, rubric), `coverage-determination.yaml` + its rubric. |
+
+Two things to know about that bundle. (1) **Two of its steps need the network**:
+choosing tools honestly (a live `tools/list`, Step 1.3) and `validate.py`
+(Step 3.2) both call the MCP servers over HTTPS. There is no offline mode; if
+the network is blocked, say so rather than guessing. (2) The reference and the
+examples are copied verbatim from the **insurance workshop kit**
+(`github.com/cam-karagitz/cma-insurance-workshop`), so when their *prose*
+mentions other example files (`examples/claims/…`, `service/add-vehicle.yaml`,
+`docs/memory-best-practices.md`), those live in that repo — only the files
+listed above ship here. Never tell the user to open a file you cannot see.
 
 ## Step 0 — Orient (before asking anything)
 
@@ -74,7 +84,10 @@ the interview was short.
 1. **The job.** "In one sentence, what should this agent do, and who reads its
    output?" Then name the closest shipped example and say why — the user
    should know which file to study.
-2. **The pillar / domain.** claims, service, or sales (or theirs).
+2. **The pillar / domain** (claims, service, or sales — or theirs), **the
+   agent's kebab-case `name`**, and what to put in `metadata.owner` (their
+   team or initials — never ship a `<YOUR_TEAM_NAME>` placeholder to a real,
+   shared org). Three seconds to ask; confusing to guess.
 3. **The reads.** "Which systems does it need to *read*?" Offer the hosted
    mocks by name from the inventory (policy admin, claims admin, the document
    repository with full policy-form language, CRM, billing, quoting, the UW
@@ -100,23 +113,40 @@ the interview was short.
      their own client). Tell the user that pause is a feature, not an error.
    - **This skill scaffolds a SINGLE agent.** If the job wants several writes,
      or it parses untrusted documents at scale and then acts on them, say so:
-     that is the 3-tier reader / analyst / writer pattern — point them at the
-     workshop kit's `adjudication.yaml` / `household-review.yaml` to copy by
-     hand. Do not silently flatten a multi-agent problem into one
-     over-privileged agent.
+     that is the 3-tier reader / analyst / writer pattern. The models to copy
+     by hand are `examples/claims/adjudication.yaml` and
+     `examples/service/household-review.yaml` in the workshop kit
+     (`github.com/cam-karagitz/cma-insurance-workshop`) — they are NOT bundled
+     here, so point the user at that repo, never at a file you don't have.
+     Do not silently flatten a multi-agent problem into one over-privileged
+     agent.
+   - **If the live tool does LESS than the user asked for** (you read its
+     real description and, say, it escalates to the agent of record but the
+     user also wanted a supervisor): say so out loud, do the honest subset,
+     and record the gap in the YAML's comments. Never imply a tool does
+     something its own description does not claim.
 5. **The knowledge.** "Should it follow your manual / SOPs / standards?" If
    yes, that is a **read-only memory store** mounted at session time
    (`run.py --readonly-store memstore_…`), not fine-tuning and not a longer
    prompt. The agent can read the manual; it can never rewrite the manual.
    Say that sentence — it is the governance line.
+   **If they say no but a rubric criterion demands a quoted rule** (a
+   reportability standard, a referral threshold, an authority matrix), the
+   rule still needs a home: put a clearly-labeled default version of it
+   verbatim in the system prompt, and note in the footer that it should
+   graduate to a read-only memory store the day the real owner writes the
+   real one. A rule the agent must quote cannot live nowhere.
 6. **The quality bar and the output contract.** "When this runs fifty times,
    *who* decides whether a run was good, and what five things would they
    check?" Those five things are the **outcomes rubric**; that person owns it
    and writes it in English. Then ask for the **output contract explicitly —
    never derive it silently**: "what should the output file be called, and
-   what sections must it always have?" If they shrug, propose one `##` heading
-   per thing the grader has to find, plus a closing `DRAFT — … Review
-   Required` line, and get a yes. The grader sees only the artifact, so the
+   what sections must it always have?" If they answer, that is the contract.
+   **If they shrug ("whatever you think") — the shrug IS their answer; do not
+   ask again.** Propose one `##` heading per thing the grader has to find,
+   plus a closing `DRAFT — … Review Required` line, state it as the contract
+   you are using, and move on — they get to correct it at Step 3.1 when you
+   show them everything anyway. The grader sees only the artifact, so the
    rubric and the headings must agree.
 
 ## Step 2 — Write the YAML (and the rubric)
@@ -176,8 +206,21 @@ directory.
 3. **Show the wire.**
    `python3 ${CLAUDE_SKILL_DIR}/scripts/deploy.py --dry-run <the yaml>` and
    point at it: *"this exact JSON is what hits `POST /v1/agents`."*
-4. **Deploy.** `python3 ${CLAUDE_SKILL_DIR}/scripts/deploy.py <the yaml>` →
-   `agt_…`. (Needs `ANTHROPIC_API_KEY` with the managed-agents beta.)
+4. **Deploy — but check the key first.** `deploy.py` and `run.py` need an
+   `ANTHROPIC_API_KEY` (with the managed-agents beta) in the environment, and
+   on a first run most people don't have it exported. Check before you try:
+   `python3 -c "import os;print('set' if os.environ.get('ANTHROPIC_API_KEY') else 'NOT SET')"`.
+   If it is NOT set, stop and ask the user which they prefer — do not guess:
+   - they export it themselves in their shell (`export ANTHROPIC_API_KEY=…`)
+     and tell you when done — the cleanest;
+   - they have a **key file** (e.g. `~/.cma-key` holding an `export …` line) —
+     then prefix every deploy/run command with `source <that file> && …`;
+   - they **paste the key to you** — then pass it INLINE on each command
+     (`ANTHROPIC_API_KEY=<key> python3 …`) so it lives only in that command.
+   Whichever they pick: **never write the key into any file, never put it in
+   the YAML, and never repeat it back to them.**
+   Then deploy: `python3 ${CLAUDE_SKILL_DIR}/scripts/deploy.py <the yaml>` →
+   `agt_…`.
 5. **Run it.**
    `python3 ${CLAUDE_SKILL_DIR}/scripts/run.py --agent agt_… --ui "<a real
    first instruction>"`, adding `--readonly-store` / `--memory-store` /
@@ -192,7 +235,9 @@ directory.
 
 - Never invent an MCP tool name, a server URL, or an event type.
 - Never skip `validate.py`, and never deploy before the user has seen the YAML.
-- Never write a secret, an API key, or a real customer's name into the YAML.
+- Never write a secret, an API key, or a real customer's name into the YAML —
+  or into ANY file. A key the user pastes to you is used inline on the command
+  line for that command only, and you never repeat it back.
 - Never grant a write without asking whether a human should approve it.
 - If something fails, show the user the *actual* error and the *actual* file.
   Nothing here is hidden, including from you.

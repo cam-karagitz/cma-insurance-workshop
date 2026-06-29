@@ -58,9 +58,21 @@ def is_placeholder(url: str) -> bool:
     return (not url) or ("your-mcp.example" in url) or ("YOUR-DOMAIN" in url)
 
 
-files = [pathlib.Path(a) for a in sys.argv[1:]] or sorted((HERE / "examples").rglob("*.yaml"))
+# Say EXACTLY what is being checked and where the list came from. The failure
+# this prevents: running `validate.py` with no args from your own project
+# directory validates the EXAMPLES THAT SHIP NEXT TO THIS SCRIPT — not your new
+# file — and a "PREFLIGHT CLEAN" over the wrong files is worse than no check.
+if sys.argv[1:]:
+    files, src = [pathlib.Path(a) for a in sys.argv[1:]], "named on the command line"
+else:
+    files, src = sorted((HERE / "examples").rglob("*.yaml")), f"every example under {HERE / 'examples'}"
+if not files:
+    sys.exit("nothing to validate: pass the YAML path, e.g.  python3 validate.py my-agent.yaml")
+print(f"preflight: {len(files)} file(s), {src}:")
+for f in files:
+    print(f"          {f}")
+print()
 fails = skips = 0
-print(f"preflight: {len(files)} example file(s)\n")
 for f in files:
     try:
         docs = list(yaml.safe_load_all(f.read_text()))
@@ -76,9 +88,16 @@ for f in files:
             if ts.get("type") != "mcp_toolset":
                 continue
             name = ts.get("mcp_server_name", "?")
-            url = servers.get(name, "")
             granted = [c["name"] for c in (ts.get("configs") or []) if c.get("enabled") is True]
             label = f"{f.name:36s} {doc.get('name', '?'):28s} {name}"
+            # A toolset whose mcp_server_name matches NO declared server is the
+            # silent-dead-grant bug this script exists to catch (usually a typo).
+            # It must be a FAIL, never a "skip" hiding inside a CLEAN.
+            if name not in servers:
+                fails += 1
+                print(f"  FAIL  {label}  no mcp_servers entry is named {name!r} -- every tool in this toolset is silently UNREACHABLE")
+                continue
+            url = servers.get(name, "")
             if is_placeholder(url):
                 skips += 1
                 print(f"  SKIP  {label}  (placeholder url -- bring your own server)")

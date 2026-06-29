@@ -2,8 +2,8 @@
 """Run a session against a deployed Claude Managed Agent and stream the events.
 
 Usage:
-  python run.py --agent agt_... [--env env_...] [--memory-store memstore_...] "your instruction"
-  python run.py --ui --agent agt_... "your instruction"        # + a local browser view
+  python3 run.py --agent agt_... [--env env_...] [--memory-store memstore_...] "your instruction"
+  python3 run.py --ui --agent agt_... "your instruction"        # + a local browser view
 
 If --env is omitted, a default cloud environment is created and its ID printed
 so you can reuse it on subsequent runs.

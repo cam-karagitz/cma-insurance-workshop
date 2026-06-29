@@ -27,10 +27,10 @@ python3 validate.py
 $EDITOR examples/claims/fnol-triage.yaml
 
 # 2. Deploy it — creates the agent, prints agt_... and a Console URL
-python deploy.py examples/claims/fnol-triage.yaml
+python3 deploy.py examples/claims/fnol-triage.yaml
 
 # 3. Run it — creates a session, opens the SSE stream, sends your prompt, prints events
-python run.py --agent agt_... "Triage claim CLM-2026-0001"
+python3 run.py --agent agt_... "Triage claim CLM-2026-0001"
 #    Add --ui for a localhost browser view of the SAME run: a live transcript,
 #    and an Approve / Deny card when the agent parks at requires_action. Built
 #    for the non-engineers in the room. The API key never leaves the python
@@ -104,7 +104,7 @@ The examples ship pointing at **hosted mock MCP servers** (synthetic data) so th
 
 **Either.** The CMA API speaks JSON; YAML is just an authoring convenience (comments, multiline `system:` prompts, multi-doc fleets). `deploy.py` accepts both — `yaml.safe_load` parses JSON since JSON ⊂ YAML.
 
-`examples/claims/fnol-triage.{yaml,json}` are the same agent in both syntaxes. To get JSON for any YAML example, `python deploy.py --dry-run <file.yaml>` prints the exact JSON that hits the wire.
+`examples/claims/fnol-triage.{yaml,json}` are the same agent in both syntaxes. To get JSON for any YAML example, `python3 deploy.py --dry-run <file.yaml>` prints the exact JSON that hits the wire.
 
 ## Workshop tracks
 

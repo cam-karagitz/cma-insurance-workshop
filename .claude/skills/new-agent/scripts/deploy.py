@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Deploy a Claude Managed Agent from a YAML config.
 
-Usage:  ANTHROPIC_API_KEY=sk-ant-... python deploy.py [--dry-run] agent.yaml
+Usage:  ANTHROPIC_API_KEY=sk-ant-... python3 deploy.py [--dry-run] agent.yaml
 
 The YAML file defines an agent and (optionally) an environment to create
 alongside it. See examples/ for the schema. With --dry-run, prints the
@@ -42,7 +42,7 @@ argv = sys.argv[1:]
 DRY_RUN = "--dry-run" in argv
 argv = [a for a in argv if a != "--dry-run"]
 if len(argv) != 1:
-    fail("usage: python deploy.py [--dry-run] <agent.yaml>")
+    fail("usage: python3 deploy.py [--dry-run] <agent.yaml>")
 
 API_KEY = os.environ.get("ANTHROPIC_API_KEY")
 if not API_KEY and not DRY_RUN:
