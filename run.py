@@ -87,7 +87,7 @@ if not HDRS["x-api-key"]:
 #     event is set   ◀──────────────────────    reply {"ok": true}
 #     lock: take the decision,
 #           pending=None, status=running
-#     return it → the caller builds the SAME user.tool_approval body the
+#     return it → the caller builds the SAME user.tool_confirmation body the
 #     terminal path builds, POSTs it, and keeps reading the SAME stream.
 #
 #   The decision is written BEFORE event.set(), both under UI["lock"], and the
@@ -250,8 +250,8 @@ class _UIHandler(BaseHTTPRequestHandler):
         if decision not in ("approve", "deny"):
             return self._json(400, {"error": 'decision must be "approve" or "deny"'})
         # Hand off to the SSE thread parked in ui_await_decision(). This
-        # thread never touches the Anthropic API — it deposits the decision
-        # and signals; the main thread builds and POSTs the user.tool_approval.
+        # thread never touches the Anthropic API — it deposits the decision and
+        # signals; the main thread builds and POSTs the user.tool_confirmation.
         with UI["lock"]:
             if UI["state"]["pending"] is None:
                 return self._json(409, {"error": "nothing is waiting for approval"})
@@ -391,7 +391,10 @@ def send_first_message():
 # for the lossless-reconnect pattern using `processed_at`.
 threading.Timer(0.5, send_first_message).start()
 
-# The most recent agent.tool_use_request, held until a human approves or denies it.
+# Tool calls waiting on a human, keyed by their event id (sevt_…). An
+# agent.mcp_tool_use / agent.tool_use that arrives with `evaluated_permission`
+# == "ask" goes in here; the session.status_idle whose stop_reason names those
+# ids drains it (one user.tool_confirmation per id).
 PENDING = {}
 
 with cma("GET", f"/v1/sessions/{sid}/events/stream", stream=True) as stream:
@@ -404,69 +407,93 @@ with cma("GET", f"/v1/sessions/{sid}/events/stream", stream=True) as stream:
         if et == "agent.text":
             print(ev.get("text", ""), end="", flush=True)
             ui_feed("text", text=ev.get("text", ""))
-        elif et == "agent.tool_use":
+        elif et in ("agent.tool_use", "agent.mcp_tool_use"):
             preview = json.dumps(ev.get("input", {}))[:120]
             print(f"\n  → {ev.get('name')}  {preview}")
             ui_feed("tool_use", name=ev.get("name"), preview=preview)
-        elif et == "agent.tool_result":
+            if ev.get("evaluated_permission") == "ask":
+                # A tool guarded by permission_policy: always_ask. NO result will
+                # follow this call; the session is about to PARK (the next
+                # session.status_idle carries stop_reason.type == "requires_action"
+                # pointing back at THIS event's id). The event carries the FULL
+                # input the human is being asked to approve. Show all of it —
+                # "here is the exact change you are authorizing" IS the demo.
+                # Don't truncate.
+                if ev.get("id"):
+                    PENDING[ev["id"]] = ev
+                print(f"\n⏸  HUMAN APPROVAL REQUIRED — the agent wants to call:  {ev.get('name')}")
+                print(json.dumps(ev.get("input", {}), indent=2))
+                ui_feed("approval_request", name=ev.get("name"), tool_use_id=ev.get("id"))
+        elif et in ("agent.tool_result", "agent.mcp_tool_result"):
             print(f"  ← ({len(str(ev.get('content','')))} chars)")
             ui_feed("tool_result", chars=len(str(ev.get("content", ""))))
-        elif et == "agent.tool_use_request":
-            # A tool guarded by permission_policy: always_ask. The session is about
-            # to PARK at requires_action. This event carries the tool_use_id and the
-            # FULL input the human is being asked to approve. Show all of it — "here
-            # is the exact change you are authorizing" IS the demo. Don't truncate.
-            PENDING.update(ev)
-            print(f"\n\n⏸  HUMAN APPROVAL REQUIRED — the agent wants to call:  {ev.get('name')}")
-            print(json.dumps(ev.get("input", {}), indent=2))
-            ui_feed("approval_request", name=ev.get("name"), tool_use_id=ev.get("id"))
-        elif et == "session.requires_action":
-            # The session is now PAUSED. Nothing happens until a human answers. This
-            # is the human-in-the-loop gate that `permission_policy: always_ask` buys
-            # you: a CONFIG property, not a prompt-level hope. A real client (an
-            # adjuster UI, a supervisor's queue) renders the pending call and POSTs
-            # the decision; here that client is you and one keypress. After you
-            # answer, the agent resumes on THIS SAME stream — no Console, no restart.
-            act = ev.get("action") or {}
-            tu = act.get("tool_use_id") or act.get("id") or PENDING.get("id")
-            name = act.get("name") or PENDING.get("name") or "the pending tool"
-            if not tu:
-                # The stream shape changed and we can't find a tool_use_id. Fall
-                # back to the Console rather than guess one.
-                print(f"\n\n⏸  requires_action, but no tool_use_id on the event:\n{json.dumps(ev, indent=2)}")
-                print("    Approve in the platform Console, then re-run.")
-                ui_feed("error", text="requires_action arrived without a tool_use_id — "
-                                      "approve in the platform Console, then re-run.")
-                ui_set(status="error")
-                break
-            if UI is not None:
-                # --ui: the browser is the human. Publish the pending call (tool
-                # name + the FULL input captured at agent.tool_use_request) and
-                # park this thread until the page POSTs /approve. No input() —
-                # but the event we build, and the resume, are EXACTLY the same.
-                got = ui_await_decision({"tool_use_id": tu, "name": name,
-                                         "input": PENDING.get("input") or act.get("input") or {}})
-                decision = got["decision"]
-                reason = got.get("reason")
-            else:
-                try:
-                    ans = input(f"\n    Approve {name}? [y = approve / anything else = deny]  ").strip().lower()
-                except EOFError:
-                    ans = ""
-                decision = "approve" if ans == "y" else "deny"
-                reason = None
-            approval = {"type": "user.tool_approval", "tool_use_id": tu,
-                        "decision": decision}
-            if decision == "deny":
-                approval["reason"] = reason or "Denied by the human reviewer at the requires_action gate."
-            cma("POST", f"/v1/sessions/{sid}/events", {"events": [approval]})
-            print(f"    → {'approved' if decision == 'approve' else 'denied'}. Resuming the stream…\n")
-            ui_feed("decision", decision=decision, name=name, reason=approval.get("reason"))
-            PENDING.clear()
-            # Deliberately NO `break`: the agent keeps going and we keep watching it.
         elif et == "session.status_idle":
-            print("\n\n✅ idle — outputs (if any) at /mnt/session/outputs/ in Console")
-            ui_feed("status", text="idle — outputs (if any) at /mnt/session/outputs/ in Console")
+            # status_idle is NOT always the end — its stop_reason says why the
+            # agent stopped:
+            #   * requires_action → the session is PAUSED on the tool call(s)
+            #     listed in stop_reason.event_ids: the agent.mcp_tool_use /
+            #     agent.tool_use events that arrived with evaluated_permission
+            #     "ask" (held in PENDING). Nothing happens until a human answers
+            #     each one with a user.tool_confirmation. This is the
+            #     human-in-the-loop gate that `permission_policy: always_ask`
+            #     buys you: a CONFIG property, not a prompt-level hope. A real
+            #     client (an adjuster UI, a supervisor's queue) renders the
+            #     pending call and POSTs the answer; here that client is you and
+            #     one keypress — or, with --ui, one click in the browser. After
+            #     you answer, the agent resumes on THIS SAME stream: no Console,
+            #     no restart, and NO break.
+            #   * anything else (end_turn, retries_exhausted, …) → the run is over.
+            sr = ev.get("stop_reason") or {}
+            if sr.get("type") == "requires_action":
+                ids = sr.get("event_ids") or []
+                if not ids:
+                    # The stream shape changed and there's nothing to answer.
+                    # Defer to the Console rather than guess.
+                    print(f"\n\n⏸  requires_action, but no event_ids on the stop_reason:\n{json.dumps(ev, indent=2)}")
+                    print("    Answer it in the platform Console; still listening on this stream.")
+                    ui_feed("error", text="requires_action arrived without event_ids — "
+                                          "answer it in the platform Console.")
+                for tu in ids:
+                    req = PENDING.get(tu)
+                    if req is None:
+                        print(f"\n\n⏸  requires_action points at {tu}, but that tool_use event was never seen.")
+                        print("    Answer it in the platform Console; still listening on this stream.")
+                        ui_feed("error", text=f"requires_action points at {tu}, but that tool_use "
+                                              "event was never seen — answer it in the platform Console.")
+                        continue
+                    name = req.get("name") or "the pending tool"
+                    if UI is not None:
+                        # --ui: the browser is the human. Publish the pending call
+                        # (tool name + the FULL input from the "ask" tool_use
+                        # event) and park this thread until the page POSTs
+                        # /approve. No input() — but the event we build, and the
+                        # resume, are EXACTLY the same as the terminal path's.
+                        got = ui_await_decision({"tool_use_id": tu, "name": name,
+                                                 "input": req.get("input") or {}})
+                        allow = got["decision"] == "approve"
+                        note = got.get("reason")
+                    else:
+                        try:
+                            ans = input(f"\n    Approve {name}? [y = approve / anything else = deny]  ").strip().lower()
+                        except EOFError:
+                            ans = ""
+                        allow = ans == "y"
+                        note = None
+                    confirmation = {"type": "user.tool_confirmation", "tool_use_id": tu,
+                                    "result": "allow" if allow else "deny"}
+                    if not allow and note:
+                        confirmation["deny_message"] = note
+                    cma("POST", f"/v1/sessions/{sid}/events", {"events": [confirmation]})
+                    print(f"    → {'approved' if allow else 'denied'}. Resuming the stream…\n")
+                    ui_feed("decision", decision="approve" if allow else "deny", name=name,
+                            reason=confirmation.get("deny_message"))
+                    PENDING.pop(tu, None)
+                # Deliberately NO `break`: the session was only paused, and the
+                # agent now resumes on this SAME stream — keep reading it.
+                continue
+            why = f" ({sr['type']})" if sr.get("type") else ""
+            print(f"\n\n✅ idle{why} — outputs (if any) at /mnt/session/outputs/ in Console")
+            ui_feed("status", text=f"idle{why} — outputs (if any) at /mnt/session/outputs/ in Console")
             ui_set(status="idle")
             break
         elif et.startswith("session.error"):

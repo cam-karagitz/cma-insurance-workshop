@@ -215,11 +215,16 @@ metadata:
 #
 # 4. WHAT TO WATCH FOR ON THE STREAM:
 #      agent.* …                  the queue being built
-#      agent.tool_use_request     refer_to_siu — the ONE gated action
-#      session.requires_action    ← THE SUPERVISOR MOMENT. run.py shows the
-#                                   full pending call and waits for y/n
-#                                   (or the Approve button under --ui).
-#      session.status_idle        next-actions.md is in /mnt/session/outputs/
+#      agent.mcp_tool_use         refer_to_siu with `evaluated_permission:"ask"`
+#                                   — the ONE gated action, attempted
+#      session.status_idle        with stop_reason {type: "requires_action",
+#        ← THE SUPERVISOR MOMENT    event_ids: [<that call's sevt_… id>]}.
+#                                   run.py shows the full pending call, waits
+#                                   for y/n (or the Approve button under --ui),
+#                                   POSTs the `user.tool_confirmation`, and the
+#                                   SAME stream resumes. It does NOT exit here.
+#      session.status_idle        with stop_reason end_turn — DONE:
+#                                   next-actions.md is in /mnt/session/outputs/
 #      outcome.result             the grader's score against the rubric
 #    Whether refer_to_siu fires at all depends on whether the MANUAL's
 #    referral criteria are met by an open claim. That is the demo: edit the

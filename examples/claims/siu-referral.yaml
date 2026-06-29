@@ -114,10 +114,16 @@ tools:
       # end-to-end against ins-mocks. Idempotent: re-referring an already-
       # referred claim returns the existing referral, never a duplicate.
       - { name: refer_to_siu, enabled: true, permission_policy: { type: always_ask } }
-      # On a REFER run the SSE stream emits `session.requires_action` with the
-      # pending refer_to_siu call. Your client surfaces it; a human approves or
-      # denies via `POST …/events {events:[{type:"user.tool_approval", …}]}`.
-      # run.py prints the pending action and stops — approve in Console.
+      # On a REFER run the stream emits the refer_to_siu `agent.mcp_tool_use`
+      # with `evaluated_permission: "ask"` (no result follows it), then
+      # `session.status_idle` whose stop_reason is
+      #   {type: "requires_action", event_ids: ["<that event's sevt_… id>"]}
+      # — the session is PARKED on a human. The human answers by POSTing
+      #   {events:[{type:"user.tool_confirmation",
+      #             tool_use_id:"<that sevt_… id>", result:"allow"}]}   (or "deny")
+      # run.py does this round-trip for you: terminal [y/n], or the Approve
+      # button under --ui. It then keeps reading the SAME stream — the agent
+      # resumes; nothing restarts. (There is no `user.tool_approval` event.)
 
   # Policy administration — read-only. Needed for inception/endorsement/lapse
   # dates so POLICY-TIMING indicators can be assessed.
