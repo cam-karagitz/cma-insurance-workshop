@@ -31,6 +31,7 @@ Please complete these **before** the session — the first 30 minutes assume you
 
 - [ ] **Claude Code** installed: `npm i -g @anthropic-ai/claude-code` — opening this repo in CC loads `CLAUDE.md` and makes your session CMA-aware
 - [ ] Run `/claude-api managed-agents-onboard` in Claude Code once before the workshop — it scaffolds a hello-world agent in your language and walks the 4-resource model. Takes ~5 minutes; we'll skip it on the day if you've done it.
+  - **Heads-up, and it's deliberate that we still recommend it:** the agent that flow generates enables the **full built-in toolset** and a **blanket, un-allowlisted grant on every MCP server you give it** — which, because MCP toolsets are allow-by-default, silently includes every WRITE tool those servers expose. That is fine for hello-world and it is exactly the fail-open default the first lab teaches you to never ship (see gotcha #4 and `validate.py`). If you notice it yourself before the workshop, you've already learned the most important thing in it.
 
 ## What to bring (optional, for the "swap in your own MCP" segment)
 

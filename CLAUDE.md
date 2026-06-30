@@ -88,4 +88,7 @@ metadata: { owner: <you>, workflow: <name>, role: Orchestrator|Reader|Writer }  
 
 ## Going deeper
 
-For API details beyond this kit (memory stores, vaults, outcomes, dreaming, streaming reconnect, SDK code generation), invoke the **`claude-api` skill** — e.g. `/claude-api managed-agents-onboard` scaffolds the session create + SSE loop in the project's language. The skill teaches the client mechanics; this kit provides the domain-shaped configs on top.
+For API details beyond this kit (memory stores, vaults, outcomes, dreaming, streaming reconnect, SDK code generation), invoke the **`claude-api` skill** — e.g. `/claude-api managed-agents-onboard` scaffolds the session create + SSE loop in the project's language. The skill teaches the client mechanics; this kit provides the domain-shaped configs on top. Two boundary notes, both verified by running that flow end-to-end against this kit's own mock servers:
+
+- The onboarding flow's generated agent uses the **full built-in toolset and blanket, un-allowlisted `mcp_toolset` grants** — on these mocks that silently includes live writes like `file_fnol` and `endorse_policy`. It is a hello-world, not a template. **The examples here are the template** (deny-by-default + an explicit read allowlist, gotcha #4), and `validate.py` is the proof.
+- When you outgrow `run.py` (reconnect/resume, multi-session, a real UI), that same `claude-api` skill's Managed-Agents client patterns are the production reference — stream-before-send, the `stop_reason`-aware idle gate, lossless reconnect, output download. `run.py` is the deliberately readable teaching version of exactly those patterns, not a replacement for them.
