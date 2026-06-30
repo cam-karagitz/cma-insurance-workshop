@@ -10,9 +10,11 @@ Please complete these **before** the session — the first 30 minutes assume you
 - [ ] **Console access** at https://platform.claude.com — you should see a "Managed Agents" tab in your workspace
 - [ ] **Network reachability — checked from the network you will actually be on during the workshop** (corporate Wi-Fi / VPN, not a phone hotspot). Corporate proxies sometimes block one of these, and finding out on the day costs you the first lab:
   - `https://platform.claude.com` opens in your browser
+  - `https://github.com/cam-karagitz/cma-insurance-workshop` opens in your browser — this repo is public; everything in the workshop ships in it, so if you can see that page you can get the files (clone, "Download ZIP", or even copy a single YAML out of the Raw view)
   - `https://ins-mocks.vercel.app/` opens in your browser — that page lists the hosted mock insurance systems the examples call (all data is synthetic)
   - the API-key `curl` above returns JSON, which also proves `api.anthropic.com` is reachable
-  - If any of the three is blocked, ask your network team to allow `api.anthropic.com`, `platform.claude.com`, and `ins-mocks.vercel.app` over HTTPS (443), and reply to the invite so we know before the day.
+  - If any of the four is blocked, ask your network team to allow `api.anthropic.com`, `platform.claude.com`, `github.com`, and `ins-mocks.vercel.app` over HTTPS (443), and reply to the invite so we know before the day.
+  - **Zero-install fallback (worth knowing exists):** even with nothing installed and no clone, you can open any example YAML in the browser (Raw view) and paste it into the platform Console's **Create agent** box — it accepts YAML directly. The agent config is the asset; the tool that applies it is interchangeable.
   - *Why this is only about your laptop:* the agents you'll build run in **Anthropic's cloud** and call the mock MCP servers from there — your corporate network is not in that path and cannot break the agents. This check covers your local tooling (`deploy.py`, `run.py`, `validate.py`) and the Console.
 - [ ] **Python 3.10+** with `pyyaml` + `requests` — use a venv (modern macOS/Linux block system pip via PEP 668):
   ```
