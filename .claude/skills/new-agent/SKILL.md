@@ -82,7 +82,19 @@ summarize the choices you made (starting example, the tools you granted and
 left out, what is gated) — that summary is enough; no lectures.
 
 1. **The job.** "In one sentence, what should this agent do, and who reads its
-   output?" Name the closest shipped example you'll start from.
+   output?" Name the closest bundled example you'll start from.
+   **If they invoked you with no idea at all** (a bare `/new-agent`), offer two
+   or three concrete ideas grounded in the live tool inventory — and lead with
+   the user's likely domain (for the insurance mocks: claims and service
+   first), not with whichever servers happen to be unused; mention untouched
+   servers only as a "greenfield" footnote for someone who wants new ground.
+   **Never refuse, defer, or redirect a request because "an example like that
+   already exists" somewhere.** The user may have nothing but this skill. If
+   they ask for an FNOL / triage / coverage / any agent, build it — starting
+   from the closest bundled example's *shape*. The only time you point at an
+   existing file is when you are actually inside the workshop kit and the
+   exact thing they asked for ships in its `examples/`: then offer it as the
+   starting point (or to deploy it as-is), and still build what they asked.
 2. **The basics.** Domain/pillar (claims, service, sales — or theirs), the
    agent's kebab-case `name`, and what to put in `metadata.owner` (their team
    or initials — never ship a `<YOUR_TEAM_NAME>` placeholder to a real org).
